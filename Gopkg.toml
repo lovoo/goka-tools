@@ -34,20 +34,12 @@
   version = "1.21.0"
 
 [[constraint]]
-  name = "github.com/Sirupsen/logrus"
-  version = "1.4.0"
-
-[[constraint]]
   branch = "master"
   name = "github.com/facebookgo/ensure"
 
 [[constraint]]
   name = "github.com/lovoo/goka"
   version = "0.1.1"
-
-[[constraint]]
-  name = "github.com/spf13/pflag"
-  version = "1.0.3"
 
 [[constraint]]
   branch = "master"

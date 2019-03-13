@@ -35,14 +35,6 @@
   version = "v1.21.0"
 
 [[projects]]
-  digest = "1:e4c72127d910a96daf869a44f3dd563b86dbe6931a172863a0e99c5ff04b59e4"
-  name = "github.com/Sirupsen/logrus"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "dae0fa8d5b0c810a8ab733fbd5510c7cae84eca4"
-  version = "v1.4.0"
-
-[[projects]]
   digest = "1:526d64d0a3ac6c24875724a9355895be56a21f89a5d3ab5ba88d91244269a7d8"
   name = "github.com/bsm/sarama-cluster"
   packages = ["."]
@@ -145,14 +137,6 @@
   version = "v0.5.1"
 
 [[projects]]
-  digest = "1:31e761d97c76151dde79e9d28964a812c46efc5baee4085b86f68f0c654450de"
-  name = "github.com/konsorten/go-windows-terminal-sequences"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "f55edac94c9bbba5d6182a4be46d86a2c9b5b50e"
-  version = "v1.0.2"
-
-[[projects]]
   digest = "1:d3bcc71336ffac65fd6bb53517071fdb442c12d03aebd15cc55953245758d882"
   name = "github.com/lovoo/goka"
   packages = [
@@ -193,14 +177,6 @@
   packages = ["zk"]
   pruneopts = "UT"
   revision = "c4fab1ac1bec58281ad0667dc3f0907a9476ac47"
-
-[[projects]]
-  digest = "1:c1b1102241e7f645bc8e0c22ae352e8f0dc6484b6cb4d132fa9f24174e0119e2"
-  name = "github.com/spf13/pflag"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "298182f68c66c05229eb03ac171abe6e309ee79a"
-  version = "v1.0.3"
 
 [[projects]]
   digest = "1:5b180f17d5bc50b765f4dcf0d126c72979531cbbd7f7929bf3edd87fb801ea2d"
@@ -256,14 +232,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:058e9504b9a79bfe86092974d05bb3298d2aa0c312d266d43148de289a5065d9"
-  name = "golang.org/x/crypto"
-  packages = ["ssh/terminal"]
-  pruneopts = "UT"
-  revision = "a1f597ede03a7bef967a422b5b3a5bd08805a01e"
-
-[[projects]]
-  branch = "master"
   digest = "1:5b51b81e299d0dfd03f567fd8d8a2d7ee954b3b72c69292f07c49aae785b6dd9"
   name = "golang.org/x/net"
   packages = [
@@ -303,12 +271,9 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:944736317d4f2fb1c1015ef9ca05fd9313b4e19f1128901cc678f636435fa9b0"
+  digest = "1:f36c7b9a36158e62ffe5d8b02d1b5955500c13106cdaeebf5323d88863cae96f"
   name = "golang.org/x/sys"
-  packages = [
-    "unix",
-    "windows",
-  ]
+  packages = ["unix"]
   pruneopts = "UT"
   revision = "fead79001313d15903fb4605b4a1b781532cd93e"
 
@@ -431,11 +396,9 @@
     "cloud.google.com/go/bigquery",
     "cloud.google.com/go/civil",
     "github.com/Shopify/sarama",
-    "github.com/Sirupsen/logrus",
     "github.com/facebookgo/ensure",
     "github.com/lovoo/goka",
     "github.com/lovoo/goka/codec",
-    "github.com/spf13/pflag",
     "golang.org/x/net/context",
   ]
   solver-name = "gps-cdcl"
