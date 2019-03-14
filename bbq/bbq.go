@@ -3,6 +3,7 @@ package bbq
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"reflect"
 	"strings"
@@ -10,9 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	log "github.com/Sirupsen/logrus"
 	"github.com/lovoo/goka"
-	"github.com/spf13/pflag"
 	"golang.org/x/net/context"
 )
 
@@ -20,10 +19,6 @@ const (
 	uploaderBatchsize     = 1000
 	uploaderTimeout       = 1000 * time.Millisecond
 	bigqueryUploadTimeout = 10 * time.Second
-)
-
-var (
-	targetDataset = pflag.String("target-dataset", "antispam_dev", "Name of the dataset to write data to.")
 )
 
 // Bbq writes the contents of kafka topics to bigquery
@@ -79,7 +74,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 			} else {
 				jsonString, err := json.Marshal(value.Field(i).Interface())
 				if err != nil {
-					log.Errorf("Error marshaling map to json: %v", err)
+					log.Printf("Error marshaling map to json: %v", err)
 					break
 				}
 				bqValue = string(jsonString)
@@ -100,7 +95,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 		case reflect.Interface:
 			jsonString, err := json.Marshal(value.Field(i).Interface())
 			if err != nil {
-				log.Errorf("Error marshaling map to json: %v", err)
+				log.Printf("Error marshaling map to json: %v", err)
 				break
 			}
 			values[value.Type().Field(i).Name] = string(jsonString)
@@ -114,15 +109,15 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 }
 
 // NewBbq creates a new Bbq struct.
-func NewBbq(gcpproject string, tables []*TableOptions) (*Bbq, error) {
+func NewBbq(gcpproject string, datesetName string, tables []*TableOptions) (*Bbq, error) {
 	ctx := context.Background()
 	client, err := bigquery.NewClient(ctx, gcpproject)
 	if err != nil {
 		return nil, fmt.Errorf("Error creating BigQuery client: %v", err)
 	}
 
-	dataset := client.Dataset(*targetDataset)
-	log.Infof("BigQuery client created successfully. Writing to %s dataset", *targetDataset)
+	dataset := client.Dataset(datesetName)
+	log.Printf("BigQuery client created successfully. Writing to %s dataset", datesetName)
 
 	uploaders := make(map[string]*batchedUploader)
 	stop := make(chan bool, 1)
