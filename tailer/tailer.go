@@ -228,14 +228,11 @@ func (t *Tailer) Read(num int64, offset int64) ([]interface{}, error) {
 	// prepare the list with appropriate capacity
 	items := make([]interface{}, 0, lastIndex-firstIndex)
 
-	//fmt.Printf("num=%d, offset=%d, numItems=%d, first=%d, last=%d, items-len=%d, items-cap=%d\n", num, offset, numItems, firstIndex, lastIndex, len(items), cap(items))
-
 	// iterate from lastIndex to firstindex
 	for idx := lastIndex; idx > firstIndex; idx-- {
 		// get the real index by shifting + modulo it's size.
 		// that way we iterate backwards through the ring
 		ringIdx := (idx + idxShift) % t.size
-		//log.Printf(">>idx:%d, ringIdx:%d", idx, ringIdx)
 
 		// decode the element and add it
 		decoded, err := t.codec.Decode(t.items[ringIdx].Value)
