@@ -8,6 +8,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/lovoo/goka"
 	"github.com/lovoo/goka-tools/bbq"
+	"github.com/lovoo/goka/codec"
 )
 
 // tableOptions retypes the bbq.TableOptions-Type to allow extracting
@@ -28,7 +29,7 @@ func main() {
 			Input:            "topic_name",
 			Obj:              []byte{},
 			TimePartitioning: &bigquery.TimePartitioning{Expiration: 14 * 24 * time.Hour},
-			Codec:            new(bbq.BytesCodec),
+			Codec:            new(codec.Bytes),
 		},
 	}
 
@@ -40,7 +41,7 @@ func main() {
 	proc, err := goka.NewProcessor([]string{"kafka", "brokers"}, goka.DefineGroup(
 		"bbq-group",
 		tableOptions(tables).edges(bbq.Consume)...,
-	), goka.WithClientID("antispam-bbq"))
+	), goka.WithClientID("bbq"))
 
 	if err != nil {
 		log.Fatalf("Unable to create Goka processor: %v", err)

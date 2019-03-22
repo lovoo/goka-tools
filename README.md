@@ -2,6 +2,11 @@
 
 Goka Tools is a collection of tools that integrate with [Goka](https://github.com/lovoo/goka), a distributed stream processing library for Apache Kafka written in Go.
 
+## Tools
+
+* BBQ: A package that writes messages from a Kafka topic directly into BigQuery.
+* Tailer: A package used for retrieving the last n messages from a given topic.
+
 ## Installation
 
 You can install Goka Tools by running the following command:
