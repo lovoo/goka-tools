@@ -6,6 +6,7 @@ Goka Tools is a collection of tools that integrate with [Goka](https://github.co
 
 * BBQ: A package that writes messages from a Kafka topic directly into BigQuery.
 * Tailer: A package used for retrieving the last n messages from a given topic.
+* DotGen: A package for generating DOT files that describe a Goka GroupGraph.
 
 ## Installation
 
