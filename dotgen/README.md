@@ -1,3 +1,13 @@
+# DotGen
+
+DotGen is a package for generating DOT files that describe a Goka GroupGraph.
+
+## Example
+
+***
+The following code is a working example on how to generate a DOT using DotGen.
+
+```go
 package main
 
 import (
@@ -42,3 +52,7 @@ func main() {
 
 	tree.Render()
 }
+```
+
+The resulting DOT of this processor, after being converted to an image (see the example sections), looks like this:
+<img src="dotgen/graph.png"  alt="graph"/>
