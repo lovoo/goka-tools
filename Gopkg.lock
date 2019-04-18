@@ -137,7 +137,8 @@
   version = "v0.5.1"
 
 [[projects]]
-  digest = "1:d3bcc71336ffac65fd6bb53517071fdb442c12d03aebd15cc55953245758d882"
+  branch = "master"
+  digest = "1:70a33415fd6b4d57db7e6c82477aa48ed40431ef9bc73ab50b6a14d090d60f59"
   name = "github.com/lovoo/goka"
   packages = [
     ".",
@@ -148,8 +149,7 @@
     "storage",
   ]
   pruneopts = "UT"
-  revision = "3da18a1c44d31288d515a7a3f8e93d3d31bb0537"
-  version = "v0.1.1"
+  revision = "32bdc0bd5f5d564c5277b1a3b358d352b74f3df7"
 
 [[projects]]
   digest = "1:d4c88b5ad20151a96c1e5a55547a944b6af623aa315f69ee0d172b00f95d27fb"

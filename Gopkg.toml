@@ -38,8 +38,8 @@
   name = "github.com/facebookgo/ensure"
 
 [[constraint]]
+  branch = "master"
   name = "github.com/lovoo/goka"
-  version = "0.1.1"
 
 [[constraint]]
   branch = "master"
