@@ -17,14 +17,13 @@ The following code is a working example of BBQ using [Goka](https://github.com/l
 package main
 
 import (
+	"cloud.google.com/go/bigquery"
 	"context"
+	"github.com/lovoo/bbq"
+	"github.com/lovoo/goka"
+	"github.com/prometheus/client_golang/prometheus"
 	"log"
 	"time"
-
-	"cloud.google.com/go/bigquery"
-	"github.com/lovoo/goka"
-	"github.com/lovoo/goka-tools/bbq"
-	"github.com/lovoo/goka/codec"
 )
 
 // tableOptions retypes the bbq.TableOptions-Type to allow extracting
@@ -45,22 +44,20 @@ func main() {
 			Input:            "topic_name",
 			Obj:              []byte{},
 			TimePartitioning: &bigquery.TimePartitioning{Expiration: 14 * 24 * time.Hour},
-			Codec:            new(codec.Bytes),
+			Codec:            new(bbq.BytesCodec),
 		},
 	}
 
-	bbq, err := bbq.NewBbq("gcp-project", "target-dataset", tables)
-	if err != nil {
-		log.Fatalf("Unable to create new BBQ: %v", err)
-	}
+	bbq, _ := bbq.NewBbq("gcp-project", tables, "metrics-namespace")
 
+	prometheus.DefaultRegisterer.MustRegister(bbq)
 	proc, err := goka.NewProcessor([]string{"kafka", "brokers"}, goka.DefineGroup(
-		"bbq-group",
+		"user-group",
 		tableOptions(tables).edges(bbq.Consume)...,
-	), goka.WithClientID("bbq"))
+	), goka.WithClientID("antispam-bbq"))
 
 	if err != nil {
-		log.Fatalf("Unable to create Goka processor: %v", err)
+		panic(err)
 	}
 
 	done := make(chan bool)
