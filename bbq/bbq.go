@@ -74,7 +74,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 			} else {
 				jsonString, err := json.Marshal(value.Field(i).Interface())
 				if err != nil {
-					log.Printf("Error marshaling map to json: %v", err)
+					log.Printf("Error marshaling map (%#v) to json: %v", value, err)
 					break
 				}
 				bqValue = string(jsonString)
@@ -95,7 +95,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 		case reflect.Interface:
 			jsonString, err := json.Marshal(value.Field(i).Interface())
 			if err != nil {
-				log.Printf("Error marshaling map to json: %v", err)
+				log.Printf("Error marshaling interface (%#v) to json: %v", value, err)
 				break
 			}
 			values[value.Type().Field(i).Name] = string(jsonString)
