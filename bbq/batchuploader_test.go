@@ -7,7 +7,6 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/facebookgo/ensure"
-	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 )
 
@@ -41,11 +40,9 @@ func TestBatchUploader(t *testing.T) {
 	stop := make(chan bool, 0)
 	var wg sync.WaitGroup
 	up := new(testUploader)
-	uploadedCounter := prometheus.NewCounter(prometheus.CounterOpts{})
-	uploadFailedCounter := prometheus.NewCounter(prometheus.CounterOpts{})
 
 	// create an uploaer with batchsize 10 and a 100ms timeout
-	uploader := newBatchedUploader(stop, &wg, "test", up, uploadedCounter, uploadFailedCounter,
+	uploader := newBatchedUploader(stop, &wg, "test", up,
 		10, 100*time.Millisecond)
 
 	// add less than a batch and wait for the timeout

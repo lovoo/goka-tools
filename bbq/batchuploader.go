@@ -8,15 +8,12 @@ import (
 	"golang.org/x/net/context"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type batchedUploader struct {
-	table        string
-	uploader     uploader
-	uploaded     prometheus.Counter
-	uploadFailed prometheus.Counter
-	vals         chan bigquery.ValueSaver
+	table    string
+	uploader uploader
+	vals     chan bigquery.ValueSaver
 }
 
 // helper interface that abstracts bigquery's table uploader so we can
@@ -25,13 +22,11 @@ type uploader interface {
 	Put(context.Context, interface{}) error
 }
 
-func newBatchedUploader(stop chan bool, wg *sync.WaitGroup, table string, uploader uploader, uploaded prometheus.Counter, uploadFailed prometheus.Counter, batchSize int, timeout time.Duration) *batchedUploader {
+func newBatchedUploader(stop chan bool, wg *sync.WaitGroup, table string, uploader uploader, batchSize int, timeout time.Duration) *batchedUploader {
 	bu := &batchedUploader{
-		table:        table,
-		uploader:     uploader,
-		uploaded:     uploaded,
-		uploadFailed: uploadFailed,
-		vals:         make(chan bigquery.ValueSaver, batchSize),
+		table:    table,
+		uploader: uploader,
+		vals:     make(chan bigquery.ValueSaver, batchSize),
 	}
 
 	go func() {
@@ -62,20 +57,15 @@ func (bu *batchedUploader) start(wg *sync.WaitGroup, batchSize int, timeout time
 		defer cancel()
 		err := bu.uploader.Put(timeoutCtx, batch)
 
-		// log the error and increase a metric but do not abort.
 		if err != nil {
 			multiError, ok := err.(bigquery.PutMultiError)
 			if ok {
 				for _, multiErr := range multiError {
 					log.Printf("Error uploading message from topic %s to BQ: %v", bu.table, multiErr)
 				}
-				bu.uploadFailed.Add(float64(len(multiError)))
 			} else {
 				log.Printf("Error uploading message from topic %s to BQ: %v. MultiError cast failed", bu.table, err)
-				bu.uploadFailed.Inc()
 			}
-		} else {
-			bu.uploaded.Add(float64(len(batch)))
 		}
 		batch = make([]bigquery.ValueSaver, 0, batchSize)
 	}

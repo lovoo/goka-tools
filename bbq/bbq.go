@@ -3,6 +3,7 @@ package bbq
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"reflect"
 	"strings"
@@ -10,9 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	log "github.com/Sirupsen/logrus"
 	"github.com/lovoo/goka"
-	"github.com/spf13/pflag"
 	"golang.org/x/net/context"
 )
 
@@ -22,13 +21,8 @@ const (
 	bigqueryUploadTimeout = 10 * time.Second
 )
 
-var (
-	targetDataset = pflag.String("target-dataset", "antispam_dev", "Name of the dataset to write data to.")
-)
-
 // Bbq writes the contents of kafka topics to bigquery
 type Bbq struct {
-	*metrics
 	uploaders     map[string]*batchedUploader
 	stopUploaders chan bool
 	uploadersWg   *sync.WaitGroup
@@ -80,7 +74,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 			} else {
 				jsonString, err := json.Marshal(value.Field(i).Interface())
 				if err != nil {
-					log.Errorf("Error marshaling map to json: %v", err)
+					log.Printf("Error marshaling map (%#v) to json: %v", value, err)
 					break
 				}
 				bqValue = string(jsonString)
@@ -101,7 +95,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 		case reflect.Interface:
 			jsonString, err := json.Marshal(value.Field(i).Interface())
 			if err != nil {
-				log.Errorf("Error marshaling map to json: %v", err)
+				log.Printf("Error marshaling interface (%#v) to json: %v", value, err)
 				break
 			}
 			values[value.Type().Field(i).Name] = string(jsonString)
@@ -115,17 +109,15 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 }
 
 // NewBbq creates a new Bbq struct.
-func NewBbq(gcpproject string, tables []*TableOptions, metricsNamespace string) (*Bbq, error) {
+func NewBbq(gcpproject string, datesetName string, tables []*TableOptions) (*Bbq, error) {
 	ctx := context.Background()
 	client, err := bigquery.NewClient(ctx, gcpproject)
 	if err != nil {
 		return nil, fmt.Errorf("Error creating BigQuery client: %v", err)
 	}
 
-	dataset := client.Dataset(*targetDataset)
-	log.Infof("BigQuery client created successfully. Writing to %s dataset", *targetDataset)
-
-	m := newMetrics(metricsNamespace)
+	dataset := client.Dataset(datesetName)
+	log.Printf("BigQuery client created successfully. Writing to %s dataset", datesetName)
 
 	uploaders := make(map[string]*batchedUploader)
 	stop := make(chan bool, 1)
@@ -139,13 +131,10 @@ func NewBbq(gcpproject string, tables []*TableOptions, metricsNamespace string) 
 			return nil, fmt.Errorf("Error creating table %v:%v", name, err)
 		}
 
-		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(),
-			m.mxTableInserts.WithLabelValues(name), m.mxErrorUpload, uploaderBatchsize, uploaderTimeout)
-
+		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(), uploaderBatchsize, uploaderTimeout)
 	}
 
 	return &Bbq{
-		metrics:       m,
 		uploaders:     uploaders,
 		stopUploaders: stop,
 		uploadersWg:   &wg,
@@ -195,10 +184,6 @@ func setRequiredFalse(schema bigquery.Schema) {
 }
 
 func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name string, tableOptions *TableOptions) error {
-	if name == "" {
-		return fmt.Errorf("Empty table name")
-	}
-	
 	// Check if the table exists. If it does not, a new one is created
 	table := dataset.Table(name)
 
