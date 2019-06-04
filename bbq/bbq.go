@@ -23,6 +23,7 @@ const (
 
 // Bbq writes the contents of kafka topics to bigquery
 type Bbq struct {
+	*metrics
 	uploaders     map[string]*batchedUploader
 	stopUploaders chan bool
 	uploadersWg   *sync.WaitGroup
@@ -109,7 +110,7 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 }
 
 // NewBbq creates a new Bbq struct.
-func NewBbq(gcpproject string, datesetName string, tables []*TableOptions) (*Bbq, error) {
+func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metricsNamespace string) (*Bbq, error) {
 	ctx := context.Background()
 	client, err := bigquery.NewClient(ctx, gcpproject)
 	if err != nil {
@@ -118,6 +119,8 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions) (*Bbq
 
 	dataset := client.Dataset(datesetName)
 	log.Printf("BigQuery client created successfully. Writing to %s dataset", datesetName)
+
+	m := newMetrics(metricsNamespace)
 
 	uploaders := make(map[string]*batchedUploader)
 	stop := make(chan bool, 1)
@@ -131,10 +134,13 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions) (*Bbq
 			return nil, fmt.Errorf("Error creating table %v:%v", name, err)
 		}
 
-		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(), uploaderBatchsize, uploaderTimeout)
+		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(),
+			m.mxTableInserts.WithLabelValues(name), m.mxErrorUpload,
+			uploaderBatchsize, uploaderTimeout)
 	}
 
 	return &Bbq{
+		metrics:       m,
 		uploaders:     uploaders,
 		stopUploaders: stop,
 		uploadersWg:   &wg,
@@ -184,6 +190,9 @@ func setRequiredFalse(schema bigquery.Schema) {
 }
 
 func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name string, tableOptions *TableOptions) error {
+	if name == "" {
+		return fmt.Errorf("Empty table name")
+	}
 	// Check if the table exists. If it does not, a new one is created
 	table := dataset.Table(name)
 

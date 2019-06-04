@@ -7,20 +7,8 @@ import (
 	"github.com/facebookgo/ensure"
 )
 
-type messageA struct {
-	A string
-	B int32
-	C *messageB
-	D []*messageB
-}
-
-type messageB struct {
-	A int32
-	B map[string]string
-}
-
 func TestSave(t *testing.T) {
-	a := &messageA{
+	a := &MessageA{
 		A: "message",
 	}
 
@@ -34,7 +22,7 @@ func TestSave(t *testing.T) {
 }
 
 func TestSetRequired(t *testing.T) {
-	adviceSchema, err := inferSchema(messageA{})
+	adviceSchema, err := inferSchema(MessageA{})
 	ensure.Nil(t, err)
 
 	setRequiredFalse(adviceSchema)
@@ -43,10 +31,10 @@ func TestSetRequired(t *testing.T) {
 }
 
 func TestConvertToMap(t *testing.T) {
-	msg := &messageA{
+	msg := &MessageA{
 		A: "a string",
 		B: 4,
-		C: &messageB{
+		C: &MessageB{
 			A: 3,
 		},
 	}
