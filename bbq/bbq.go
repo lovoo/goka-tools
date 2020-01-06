@@ -174,6 +174,8 @@ func (b *Bbq) Consume(ctx goka.Context, msg interface{}) {
 		msgToSave: msg,
 	}
 
+	b.metrics.mxLagSeconds.Observe(time.Since(ctx.Timestamp()).Seconds())
+
 	table := strings.Replace(string(ctx.Topic()), "-", "_", -1)
 
 	b.uploaders[table].Upload(s)
