@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -103,7 +104,7 @@ func inferFieldSchema(rt reflect.Type) (*bigquery.FieldSchema, error) {
 	case reflect.Interface:
 		return &bigquery.FieldSchema{Required: true, Type: bigquery.StringFieldType}, nil
 	default:
-		log.Printf("unsupported type is: %+v", rt.Kind())
+		log.Printf("unsupported type for field %s is: %+v", rt.Name(), rt.Kind())
 		return nil, errUnsupportedFieldType
 	}
 }
@@ -122,6 +123,15 @@ func inferFields(rt reflect.Type) (bigquery.Schema, error) {
 		if field.Tag.Get("json") == "-" {
 			continue
 		}
+		if field.Name == "" {
+			continue
+		}
+
+		// if the field is not exported, drop it
+		if strings.ToUpper(field.Name[:1]) != field.Name[:1] {
+			continue
+		}
+
 		inferredSchema, err := inferFieldSchema(field.Type)
 		if err != nil {
 			return nil, err
