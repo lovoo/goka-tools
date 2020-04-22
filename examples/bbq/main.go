@@ -33,7 +33,7 @@ func main() {
 		},
 	}
 
-	bbq, err := bbq.NewBbq("gcp-project", "target-dataset", tables)
+	bbq, err := bbq.NewBbq("gcp-project", "target-dataset", tables, "metrics")
 	if err != nil {
 		log.Fatalf("Unable to create new BBQ: %v", err)
 	}
