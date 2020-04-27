@@ -119,16 +119,8 @@ func inferFields(rt reflect.Type) (bigquery.Schema, error) {
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
-		// field is ignored for marshalling, so let's not export it
-		if field.Tag.Get("json") == "-" {
-			continue
-		}
-		if field.Name == "" {
-			continue
-		}
 
-		// if the field is not exported, drop it
-		if strings.ToUpper(field.Name[:1]) != field.Name[:1] {
+		if !useFieldForExport(field) {
 			continue
 		}
 
@@ -152,6 +144,24 @@ func isSupportedIntType(t reflect.Type) bool {
 	default:
 		return false
 	}
+}
+
+// Checks whether a field should be exported. This is both used for the mapping and for
+// inferring the schema
+func useFieldForExport(field reflect.StructField) bool {
+	// field is ignored for marshalling, so let's not export it
+	if field.Tag.Get("json") == "-" {
+		return false
+	}
+	if field.Name == "" {
+		return false
+	}
+
+	// if the field is not exported, drop it
+	if strings.ToUpper(field.Name[:1]) != field.Name[:1] {
+		return false
+	}
+	return true
 }
 
 // typeList is a linked list of reflect.Types.

@@ -58,10 +58,11 @@ func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 	values := make(map[string]bigquery.Value, value.NumField())
 
 	for i := 0; i < value.NumField(); i++ {
-		// field is ignored for marshalling, so let's not export it
-		if value.Type().Field(i).Tag.Get("json") == "-" {
+
+		if !useFieldForExport(value.Type().Field(i)) {
 			continue
 		}
+
 		switch value.Field(i).Kind() {
 		case reflect.Ptr:
 			if !value.Field(i).IsNil() && value.Field(i).Elem().Kind() == reflect.Struct {
