@@ -8,21 +8,20 @@ import (
 	"github.com/lovoo/goka/codec"
 )
 
-const allItems = -1
-
 func TestTailer_addMessage(t *testing.T) {
 	tailer := &Tailer{
 		tailHook: defaultTailHook,
+		codec:    new(codec.String),
 		size:     3,
 	}
 
 	// add items until we're full
 	ensure.True(t, tailer.numItems == 0)
-	tailer.addMessage(&sarama.ConsumerMessage{Offset: 1})
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 1, Value: []byte("asdf")})
 	ensure.True(t, tailer.numItems == 1)
-	tailer.addMessage(&sarama.ConsumerMessage{Offset: 2})
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 2, Value: []byte("asdf")})
 	ensure.True(t, tailer.numItems == 2)
-	tailer.addMessage(&sarama.ConsumerMessage{Offset: 3})
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 3, Value: []byte("asdf")})
 	ensure.True(t, tailer.numItems == 3)
 	// check correct order
 	ensure.True(t, tailer.items[0].Offset == 1)
@@ -30,7 +29,7 @@ func TestTailer_addMessage(t *testing.T) {
 	ensure.True(t, tailer.items[2].Offset == 3)
 
 	// add one more
-	tailer.addMessage(&sarama.ConsumerMessage{Offset: 4})
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 4, Value: []byte("asdf")})
 	ensure.True(t, tailer.numItems == 4)
 	ensure.True(t, tailer.items[0].Offset == 4)
 	ensure.True(t, tailer.items[1].Offset == 2)
@@ -53,7 +52,7 @@ func TestTailer_Read(t *testing.T) {
 		ensure.DeepEqual(t, len(items), len(expectedResults), "case", caseNum)
 
 		for idx, expected := range expectedResults {
-			ensure.DeepEqual(t, items[idx].(string), expected, "case", caseNum)
+			ensure.DeepEqual(t, items[idx].Value.(string), expected, "case", caseNum)
 		}
 	}
 
@@ -61,7 +60,7 @@ func TestTailer_Read(t *testing.T) {
 	testRead(0, 0, []string{}, "1")
 	testRead(1, 0, []string{}, "2")
 	testRead(1, 1, []string{}, "3")
-	testRead(allItems, 0, []string{}, "4")
+	testRead(AllItems, 0, []string{}, "4")
 
 	// add one message, and test again
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: 1, Value: []byte("1")})
@@ -71,7 +70,7 @@ func TestTailer_Read(t *testing.T) {
 	testRead(1, 1, []string{}, "7")
 	testRead(2, 0, []string{"1"}, "8")
 	testRead(1, 1, []string{}, "9")
-	testRead(allItems, 0, []string{"1"}, "10")
+	testRead(AllItems, 0, []string{"1"}, "10")
 
 	// add more than the tailer can save and test again
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: 2, Value: []byte("2")})
@@ -82,9 +81,9 @@ func TestTailer_Read(t *testing.T) {
 	testRead(1, 1, []string{"3"}, "13")
 	testRead(2, 0, []string{"4", "3"}, "14")
 	testRead(1, 3, []string{}, "15")
-	testRead(allItems, 0, []string{"4", "3", "2"}, "16")
-	testRead(allItems, 1, []string{"3", "2"}, "17")
-	testRead(allItems, 2, []string{"2"}, "18")
+	testRead(AllItems, 0, []string{"4", "3", "2"}, "16")
+	testRead(AllItems, 1, []string{"3", "2"}, "17")
+	testRead(AllItems, 2, []string{"2"}, "18")
 }
 
 func TestTailer_IterateReverse(t *testing.T) {
@@ -96,15 +95,15 @@ func TestTailer_IterateReverse(t *testing.T) {
 
 	iterateWithOffset := func(offset int) []string {
 		var read []string
-		tailer.IterateReverse(int64(offset), func(item interface{}, kafkaOffset int64) error {
-			read = append(read, item.(string))
+		tailer.IterateReverse(int64(offset), func(item *TailerItem) error {
+			read = append(read, item.Value.(string))
 			return nil
 		})
 		return read
 	}
 
 	iterate := func() []string {
-		return iterateWithOffset(allItems)
+		return iterateWithOffset(AllItems)
 	}
 
 	var offset int64

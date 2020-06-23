@@ -3,15 +3,31 @@ package tailer
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/Shopify/sarama"
+
 	"github.com/lovoo/goka"
 )
 
-type TailMessageHook func(message *sarama.ConsumerMessage)
+// TailMessageHook is called on every message being added to the tailer
+type TailMessageHook func(item *TailerItem)
 
-// Tailer retrieves the last n messages from a given topic
+// TailerVisiter is called on reverseiterate for every message
+type TailerVisiter func(item *TailerItem) error
+
+// TailerItem represents a decoded messagei n the tailer's ring buffer
+type TailerItem struct {
+	// Key is the key of the original message
+	Key string
+	// Value is the decoded value. This will not be nil, as the tailer ignores nils
+	Value interface{}
+	// Offset is the message's offset
+	Offset int64
+}
+
+// Tailer updates messages from a topic and keeps them in a ring buffer for reverse iteration
 type Tailer struct {
 	size          int64
 	topic         string
@@ -23,11 +39,11 @@ type Tailer struct {
 
 	m        sync.RWMutex
 	numItems int64
-	items    []*sarama.ConsumerMessage
+	items    []*TailerItem
 	codec    goka.Codec
 }
 
-func defaultTailHook(*sarama.ConsumerMessage) {}
+func defaultTailHook(item *TailerItem) {}
 
 // Stop the tailer
 func (t *Tailer) Stop() {
@@ -66,7 +82,7 @@ func NewTailer(brokers []string, topic string, size int, codec goka.Codec) (*Tai
 	}, nil
 }
 
-// RegisterConsumeHook registers a TailMessageHook hook
+// RegisterConsumeHook sets the callback that will be called on every message being added to the tailer
 func (t *Tailer) RegisterConsumeHook(tailHook TailMessageHook) {
 	t.tailHook = tailHook
 }
@@ -114,22 +130,41 @@ func (t *Tailer) Start() error {
 
 func (t *Tailer) tail(partConsumer sarama.PartitionConsumer) {
 	for msg := range partConsumer.Messages() {
-		t.addMessage(msg)
+		err := t.addMessage(msg)
+		if err != nil {
+			log.Printf("Error decoding message: %v", err)
+		}
 	}
 }
 
-func (t *Tailer) addMessage(msg *sarama.ConsumerMessage) {
+func (t *Tailer) addMessage(msg *sarama.ConsumerMessage) error {
 	t.m.Lock()
 	defer t.m.Unlock()
 
-	t.tailHook(msg)
+	if msg.Value == nil {
+		return nil
+	}
+
+	decoded, err := t.codec.Decode(msg.Value)
+	if err != nil {
+		return fmt.Errorf("Error decoding message %+v with codec %v: %v", msg, t.codec, err)
+	}
+
+	item := &TailerItem{
+		Key:    string(msg.Key),
+		Offset: msg.Offset,
+		Value:  decoded,
+	}
+
+	t.tailHook(item)
 
 	if t.numItems < int64(t.size) {
-		t.items = append(t.items, msg)
+		t.items = append(t.items, item)
 	} else {
-		t.items[t.numItems%int64(t.size)] = msg
+		t.items[t.numItems%int64(t.size)] = item
 	}
 	t.numItems++
+	return nil
 }
 
 // EndOffset specifies the largest offset. It is used to tell IterateReverse to
@@ -139,17 +174,18 @@ const (
 )
 
 var (
-	StopErr = errors.New("Iteration stopped.")
+	// ErrStop indicates the iteration should be stopped. This can be returned from the iterate-Visitor
+	ErrStop = errors.New("iteration stopped")
 )
 
 // IterateReverse iterates over all items ignoring items having bigger offset than maxOffset
 // (or all, if EndOffset is given)
-func (t *Tailer) IterateReverse(maxOffset int64, visit func(item interface{}, kafkaOffset int64) error) error {
+func (t *Tailer) IterateReverse(maxOffset int64, visit TailerVisiter) error {
 	t.m.RLock()
 	defer t.m.RUnlock()
 
 	if t.numItems == 0 {
-		return nil
+		return fmt.Errorf("kafka topic does not have msg")
 	}
 
 	numIterations := t.numItems
@@ -166,21 +202,21 @@ func (t *Tailer) IterateReverse(maxOffset int64, visit func(item interface{}, ka
 		if maxOffset > EndOffset && item.Offset > maxOffset {
 			continue
 		}
-		decoded, err := t.codec.Decode(item.Value)
-		if err != nil {
-			return fmt.Errorf("Error decoding message %+v with codec %v: %v", item, t.codec, err)
-		}
-		if err := visit(decoded, item.Offset); err != nil {
-			if err == StopErr {
+		if err := visit(item); err != nil {
+			if err == ErrStop {
 				return nil
+			} else {
+				return err
 			}
-			return err
 		}
 	}
 	return nil
 }
 
-func (t *Tailer) Read(num int64, offset int64) ([]interface{}, error) {
+// AllItems indicates all items from the tailer should be read
+const AllItems = -1
+
+func (t *Tailer) Read(num int64, offset int64) ([]*TailerItem, error) {
 	t.m.RLock()
 	defer t.m.RUnlock()
 	if offset < 0 {
@@ -226,20 +262,16 @@ func (t *Tailer) Read(num int64, offset int64) ([]interface{}, error) {
 	}
 
 	// prepare the list with appropriate capacity
-	items := make([]interface{}, 0, lastIndex-firstIndex)
+	items := make([]*TailerItem, 0, lastIndex-firstIndex)
+
+	//fmt.Printf("num=%d, offset=%d, numItems=%d, first=%d, last=%d, items-len=%d, items-cap=%d\n", num, offset, numItems, firstIndex, lastIndex, len(items), cap(items))
 
 	// iterate from lastIndex to firstindex
 	for idx := lastIndex; idx > firstIndex; idx-- {
 		// get the real index by shifting + modulo it's size.
 		// that way we iterate backwards through the ring
 		ringIdx := (idx + idxShift) % t.size
-
-		// decode the element and add it
-		decoded, err := t.codec.Decode(t.items[ringIdx].Value)
-		if err != nil {
-			return nil, fmt.Errorf("Error decoding item while reading from the Tailer: %v", err)
-		}
-		items = append(items, decoded)
+		items = append(items, t.items[ringIdx])
 	}
 
 	return items, nil
