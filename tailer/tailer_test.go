@@ -134,3 +134,45 @@ func TestTailer_IterateReverse(t *testing.T) {
 	ensure.DeepEqual(t, iterateWithOffset(3), []string{"c"})
 	ensure.DeepEqual(t, len(iterateWithOffset(2)), 0)
 }
+
+func TestTailer_modifyHook(t *testing.T) {
+	modifyHook := func(key []byte, value interface{}) interface{} {
+		stringKey := string(key)
+		stringValue := value.(string)
+		if stringValue == "222" {
+			return "555"
+		}
+
+		if stringKey == "3" {
+			return "999"
+		}
+		return value
+	}
+
+	tailer := &Tailer{
+		tailHook: defaultTailHook,
+		codec:    new(codec.String),
+		size:     3,
+	}
+
+	tailer.RegisterModifyHook(modifyHook)
+
+	ensure.True(t, tailer.numItems == 0)
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 1, Value: []byte("111"), Key: []byte("1")})
+	ensure.True(t, tailer.numItems == 1)
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 2, Value: []byte("222"), Key: []byte("2")})
+	ensure.True(t, tailer.numItems == 2)
+	tailer.addMessage(&sarama.ConsumerMessage{Offset: 3, Value: []byte("333"), Key: []byte("3")})
+	ensure.True(t, tailer.numItems == 3)
+	// check correct order
+	ensure.True(t, tailer.items[0].Offset == 1)
+	ensure.True(t, tailer.items[1].Offset == 2)
+	ensure.True(t, tailer.items[2].Offset == 3)
+
+	ensure.DeepEqual(t, tailer.items[0].Value.(string), "111")
+	// this message should be modified
+	ensure.DeepEqual(t, tailer.items[1].Value.(string), "555")
+	// this message should be modified
+	ensure.DeepEqual(t, tailer.items[2].Value.(string), "999")
+
+}

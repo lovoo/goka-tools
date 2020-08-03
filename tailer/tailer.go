@@ -14,6 +14,9 @@ import (
 // TailMessageHook is called on every message being added to the tailer
 type TailMessageHook func(item *TailerItem)
 
+// ModifyValueHook takes a value, modifies this value and returns the modified value
+type ModifyValueHook func(key []byte, value interface{}) interface{}
+
 // TailerVisiter is called on reverseiterate for every message
 type TailerVisiter func(item *TailerItem) error
 
@@ -35,7 +38,8 @@ type Tailer struct {
 	consumer      sarama.Consumer
 	partConsumers []sarama.PartitionConsumer
 
-	tailHook TailMessageHook
+	tailHook   TailMessageHook
+	modifyHook ModifyValueHook
 
 	m        sync.RWMutex
 	numItems int64
@@ -85,6 +89,11 @@ func NewTailer(brokers []string, topic string, size int, codec goka.Codec) (*Tai
 // RegisterConsumeHook sets the callback that will be called on every message being added to the tailer
 func (t *Tailer) RegisterConsumeHook(tailHook TailMessageHook) {
 	t.tailHook = tailHook
+}
+
+// RegisterModifyHook sets the Hook, which modifies the value of the tailer item.
+func (t *Tailer) RegisterModifyHook(modifyHook ModifyValueHook) {
+	t.modifyHook = modifyHook
 }
 
 // Start starts the tailer
@@ -148,6 +157,10 @@ func (t *Tailer) addMessage(msg *sarama.ConsumerMessage) error {
 	decoded, err := t.codec.Decode(msg.Value)
 	if err != nil {
 		return fmt.Errorf("Error decoding message %+v with codec %v: %v", msg, t.codec, err)
+	}
+
+	if t.modifyHook != nil {
+		decoded = t.modifyHook(msg.Key, decoded)
 	}
 
 	item := &TailerItem{
