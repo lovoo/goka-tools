@@ -185,7 +185,7 @@ func (t *Tailer) IterateReverse(maxOffset int64, visit TailerVisiter) error {
 	defer t.m.RUnlock()
 
 	if t.numItems == 0 {
-		return fmt.Errorf("kafka topic does not have msg")
+		return nil
 	}
 
 	numIterations := t.numItems
