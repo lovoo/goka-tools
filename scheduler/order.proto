@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package lovoo.antispam.goka_tools.scheduler.v1;
+option go_package = "github.com/lovoo/goka-tools/scheduler;scheduler";
+
+import "google/protobuf/timestamp.proto";
+
+enum OrderType {
+  // invalid to avoid default type misunderstandings
+  Invalid = 0;
+  // simple delay
+  Delay = 1;
+
+  // delay ignoring intermediate orders
+  // Send the first order's value
+  ThrottleFirst = 2;
+
+  // delay ignoring intermediate orders
+  // send the last order's value
+  // Note that this imposes more pressure on the scheduler, as it updates the
+  // order on every
+  // request. So if the payload of the order is not important, you might want to
+  // use
+  // ThrottleFirst instead.
+  // *Not implemented yet*
+  ThrottleLast = 3;
+}
+
+message Order {
+  Payload payload = 1;
+  OrderType order_type = 2;
+  int64 delay_ms = 3;
+  google.protobuf.Timestamp execution_time = 4;
+
+  bool no_catchup = 5;
+
+  message Payload {
+    string topic = 1;
+    bytes key = 2;
+    bytes message = 3;
+  }
+}
+
+message Wait {
+  google.protobuf.Timestamp execution_time = 1;
+  google.protobuf.Timestamp enter_queue_time = 3;
+  int32 iterations = 2;
+}
