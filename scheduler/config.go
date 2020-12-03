@@ -26,6 +26,19 @@ type Config struct {
 	// configures the duration after which we'll consider a delay-order being "lost", meaning that because of possible
 	// waiter-change we might never get the order to be executed, so we will execute the order right now.
 	orderCatchupTimeout time.Duration
+
+	// mxExecutionDropped counts how many executions have been dropped due to missing orders.
+	// This can happen if the scheduler was offline for too long and orders are being re-scheduled, in which case
+	// we might have duplicate executions, but only one will succeed.
+	mxExecutionDropped Count
+
+	// orderZombieTTL defines the duration for after which the scheduler will
+	// not wait for an order to be executed and reschedule. This time should be greater than a usual redeployment-time or
+	// the kafka-configured topic's retention time.
+	// This can also happen if the scheduler's waiter intervals are changed, so the scheduled orders actually keep
+	// hanging in the queue.
+	// defaults to 1*Minute
+	orderZombieTTL time.Duration
 }
 
 // Observe metric allows to observe multiple values, e.g. a histogram or a summary
@@ -47,9 +60,11 @@ func NewConfig() *Config {
 		mxExecuteRoundTrips:      func(float64) {},
 		mxExecutionTimeDeviation: func(float64) {},
 		mxPlaceOrderLag:          func(float64) {},
+		mxExecutionDropped:       func(float64) {},
 
 		// after 10 seconds we'll try to do a catchup.
 		orderCatchupTimeout: 10 * time.Second,
+		orderZombieTTL:      1 * time.Minute,
 	}
 }
 
@@ -92,6 +107,20 @@ func (c *Config) WithMxRescheduled(cnt CountForType) *Config {
 	return c
 }
 
+// WithMxExecutionDropped adds a counter to track dropped executions due to retention or rescheduling
+// issues.
+func (c *Config) WithMxExecutionDropped(cnt Count) *Config {
+	c.mxExecutionDropped = cnt
+	return c
+}
+
+// WithMxPlaceOrderLag sets an observer for measuring the lag in seconds for
+// order placement
+func (c *Config) WithMxPlaceOrderLag(o Observe) *Config {
+	c.mxPlaceOrderLag = o
+	return c
+}
+
 // WithOrderCatchupTimeout sets a counter for measuring the number of catchups after
 // restarting the scheduler with existing delay-orders
 func (c *Config) WithOrderCatchupTimeout(timeout time.Duration) *Config {
@@ -99,9 +128,8 @@ func (c *Config) WithOrderCatchupTimeout(timeout time.Duration) *Config {
 	return c
 }
 
-// WithPlaceOrderLag sets an observer for measuring the lag in seconds for
-// order placement
-func (c *Config) WithPlaceOrderLag(o Observe) *Config {
-	c.mxPlaceOrderLag = o
+// WithOrderZombieTTL sets the order zombie ttl
+func (c *Config) WithOrderZombieTTL(ttl time.Duration) *Config {
+	c.orderZombieTTL = ttl
 	return c
 }
