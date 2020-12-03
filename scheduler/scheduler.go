@@ -31,10 +31,6 @@ const (
 	// if we receive orders with execution times in the past by that much
 	// we'll consider it a "catchup" and have to decide wether we do want to execute it.
 	orderCatchupTimeout = 10 * time.Second
-
-	// time after which zombie orders will be removed
-	// TODO: should this be configurable?
-	orderZombieTTL = 10 * time.Second
 )
 
 type prefixable string
@@ -56,7 +52,7 @@ func (pt prefixAndTime) get(prefix string, timeDef int64) string {
 }
 
 var (
-	_log = logger.Default().Prefix("goka-tools-scheduler")
+	schedLog = logger.Default().Prefix("goka-tools-scheduler")
 )
 
 // Emitter is a generic emitter, but probably a *goka.Emitter
@@ -162,36 +158,36 @@ func CreateScheduler(config *Config, waitIntervals []time.Duration, creator Emit
 // CreateGraphs creates the group graphs for all components used for the scheduler:
 // one for the scheduler itself (that does the deduplication and store the payload)
 // one for each waiter, i.e. one for each interval.
-func (sched *Scheduler) CreateGraphs() []*goka.GroupGraph {
+func (s *Scheduler) CreateGraphs() []*goka.GroupGraph {
 	// collect all edges for the scheduler
 	var schedEdges = []goka.Edge{
 		goka.Persist(NewOrderCodec()),
-		goka.Input(sched.inputStream, NewOrderCodec(), sched.placeOrder),
-		goka.Input(goka.Stream(executeStream.get(sched.topicPrefix)), NewWaitCodec(), sched.requestExecute),
-		goka.Loop(NewOrderCodec(), sched.executeOrder),
+		goka.Input(s.inputStream, NewOrderCodec(), s.placeOrder),
+		goka.Input(goka.Stream(executeStream.get(s.topicPrefix)), NewWaitCodec(), s.requestExecute),
+		goka.Loop(NewOrderCodec(), s.executeOrder),
 	}
-	for _, w := range sched.waiters.ws {
+	for _, w := range s.waiters.ws {
 		schedEdges = append(schedEdges, goka.Output(w.topic, NewWaitCodec()))
 	}
 
 	return append([]*goka.GroupGraph{
-		goka.DefineGroup(goka.Group(orderGroup.get(sched.topicPrefix)), schedEdges...),
-	}, sched.waiters.createGraphs()...)
+		goka.DefineGroup(goka.Group(orderGroup.get(s.topicPrefix)), schedEdges...),
+	}, s.waiters.createGraphs()...)
 
 }
 
 // Close finishes all created emitters.
 // Note that the processors are not stopped, because it is started by the client
-func (sched *Scheduler) Close() error {
-	sched.mOutputs.Lock()
-	defer sched.mOutputs.Unlock()
+func (s *Scheduler) Close() error {
+	s.mOutputs.Lock()
+	defer s.mOutputs.Unlock()
 
 	var (
 		wg   sync.WaitGroup
 		errs = new(multierr.Errors)
 	)
 
-	for _, emitter := range sched.outputs {
+	for _, emitter := range s.outputs {
 		wg.Add(1)
 		emitter := emitter
 		go func() {
@@ -244,12 +240,12 @@ func makeSortedIntervalList(intervals []time.Duration) []time.Duration {
 		interval = interval.Truncate(time.Millisecond)
 
 		if interval == 0 {
-			_log.Printf("WARNING: Wait times smaller than 1ms are not supported. Ignoring wait time.")
+			schedLog.Printf("WARNING: Wait times smaller than 1ms are not supported. Ignoring wait time.")
 			continue
 		}
 
 		if intervalSet[interval] {
-			_log.Printf("WARNING: The interval list contains a duplicate for %dms", interval.Milliseconds())
+			schedLog.Printf("WARNING: The interval list contains a duplicate for %dms", interval.Milliseconds())
 			continue
 		}
 		intervalSet[interval] = true
@@ -301,7 +297,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 	newOrder := msg.(*Order)
 	// validate order and drop if in valid
 	if err := newOrder.validate(); err != nil {
-		_log.Printf("Ignoring request for invalid order: %v", err)
+		schedLog.Printf("Ignoring request for invalid order: %v", err)
 		return
 	}
 
@@ -326,7 +322,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 	switch newOrder.OrderType {
 	case OrderType_Delay:
 		if order != nil {
-			_log.Printf("duplicate DELAY order. Each delay needs a unique key. Dropping the new order.")
+			schedLog.Printf("duplicate DELAY order. Each delay needs a unique key. Dropping the new order.")
 			return
 		}
 		if clk.Now().Sub(newOrder.ExecutionTime.AsTime()) > s.config.orderCatchupTimeout {
@@ -344,7 +340,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 		// if we find an order whose execution time is way too old,
 		// we'll delete it and create a new one because we assume it must have gotten lost
 		// from broken waiters/changing intervals etc.
-		if order != nil && order.ExecutionTime.AsTime().Before(clk.Now().Add(-orderZombieTTL)) {
+		if order != nil && order.ExecutionTime.AsTime().Before(clk.Now().Add(-s.config.orderZombieTTL)) {
 			order = nil
 			ctx.Delete()
 			s.config.mxZombieEvicted(1)
@@ -405,7 +401,7 @@ func (s *Scheduler) requestExecute(ctx goka.Context, msg interface{}) {
 
 	orderVal := ctx.Value()
 	if orderVal == nil {
-		_log.Printf("Cannot execute. There is no order for key %s", ctx.Key())
+		s.config.mxExecutionDropped(1)
 		return
 	}
 	order := orderVal.(*Order)
@@ -424,7 +420,7 @@ func (s *Scheduler) executeOrder(ctx goka.Context, msg interface{}) {
 	order := msg.(*Order)
 
 	if err := order.validate(); err != nil {
-		_log.Printf("Ignoring execution of invalid order: %v", err)
+		schedLog.Printf("Ignoring execution of invalid order: %v", err)
 		return
 	}
 

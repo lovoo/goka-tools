@@ -229,6 +229,10 @@ func TestSchedulerIntegration(t *testing.T) {
 		if err := errg.Wait().NilOrError(); err != nil {
 			t.Errorf("Error running processors: %v", err)
 		}
+
+		if err := sched.Close(); err != nil {
+			t.Errorf("Error closing scheduler: %v", err)
+		}
 	}()
 
 	client := NewOrderClient("")
