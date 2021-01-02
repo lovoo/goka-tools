@@ -15,14 +15,14 @@ require (
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/facebookgo/subset v0.0.0-20200203212716-c811ad88dec4 // indirect
 	github.com/golang/protobuf v1.4.2
+	github.com/google/go-cmp v0.5.2 // indirect
 	github.com/lovoo/goka v1.0.5-0.20201126132004-639835ca4e74
 	github.com/mattn/go-sqlite3 v1.14.5
 	github.com/prometheus/client_golang v1.7.1
+	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
 	github.com/rs/xid v1.2.1
-	github.com/sclevine/agouti v3.0.0+incompatible // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/syndtr/goleveldb v1.0.1-0.20200815110645-5c35d600f0ca
-	go.mongodb.org/mongo-driver v1.4.4
 	go.opencensus.io v0.22.4 // indirect
 	golang.org/x/crypto v0.0.0-20200709230013-948cd5f35899 // indirect
 	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
