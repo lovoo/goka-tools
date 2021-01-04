@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -34,8 +35,9 @@ var (
 	clearPath   = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
 	compact     = pflag.Bool("compact", false, "if set to true, compacts the database after loading")
 	storageType = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
+	noHeader    = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
 	duration    = pflag.Int("duration", 60, "duration in seconds to run after recovery")
-	statsFile   = pflag.String("stats", "stats", "file to stats")
+	statsFile   = pflag.String("stats", "", "file to stats")
 )
 
 var (
@@ -60,9 +62,18 @@ func main() {
 		}
 	}
 
-	// st := createPogrepStorage()
-	// st := createSqliteStorage()
-	st := createStorage()
+	var st storage.Storage
+	switch *storageType {
+	case "leveldb":
+		st = createStorage()
+	case "pogrep":
+		st = createPogrepStorage()
+	case "sqlite":
+		st = createSqliteStorage()
+	default:
+		log.Fatalf("invalid storage type: %s", *storageType)
+	}
+
 	err := st.Open()
 	if err != nil {
 		log.Fatalf("Error opening database: %v", err)
@@ -302,19 +313,25 @@ func newMetrics(ctx context.Context) *benchmetrics {
 
 func writeStats(ctx context.Context, bm *benchmetrics, reg metrics.Registry) {
 
-	out, err := os.Create(*statsFile)
-	if err != nil {
-		log.Fatalf("Error creating stats file %s: %v", *statsFile, err)
-	}
-	defer func() {
-		if err := out.Close(); err != nil {
-			log.Printf("error closing stats file: %v", err)
+	var out io.Writer = os.Stdout
+	if *statsFile != "" {
+		outFile, err := os.Create(*statsFile)
+		if err != nil {
+			log.Fatalf("Error creating stats file %s: %v", *statsFile, err)
 		}
-	}()
+		defer func() {
+			if err := outFile.Close(); err != nil {
+				log.Printf("error closing stats file: %v", err)
+			}
+		}()
+		out = outFile
+	}
 
-	fmt.Fprintf(out, "recov,commit,ops.all,ops.read,ops.write,mem\n")
+	if !*noHeader {
+		fmt.Fprintf(out, "storage,numkeys,keylen,vallen,recov,commit,ops.all,ops.read,ops.write,mem\n")
+	}
 
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 
 	var (
@@ -350,7 +367,12 @@ func writeStats(ctx context.Context, bm *benchmetrics, reg metrics.Registry) {
 		if mem < 0 {
 			continue
 		}
-		fmt.Fprintf(out, "%d,%d,%.0f,%.0f,%.0f,%d\n", recov, commit, opsAll, opsRead, opsWrite, mem)
+		fmt.Fprintf(out, "%s,%d,%d,%d,%d,%d,%.0f,%.0f,%.0f,%d\n",
+			*storageType,
+			*numKeys,
+			*keyLength,
+			*valueLength,
+			recov, commit, opsAll, opsRead, opsWrite, mem)
 
 	}
 }
