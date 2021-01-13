@@ -6,8 +6,13 @@ import "time"
 type Config struct {
 	// ZombieEvicted counts when a zombie order gets evicted
 	mxZombieEvicted Count
+
 	// mxThrottleDuplicate is incremented whenever a throttling order ignores a duplicate
 	mxThrottleDuplicate Count
+
+	// mxThrottleFirstRescheduled is incremented whenever a throttling order is being rescheduled
+	mxThrottleFirstRescheduled Count
+
 	// mxRescheduled is incremented whenever a waiter waits for a message.
 	// The type is the number of milliseconds of the waiter's max wait time.
 	// So note this is not actually the number of milliseconds the waiter is going to wait, which is probably less.
@@ -54,13 +59,14 @@ type CountForType func(string, float64)
 func NewConfig() *Config {
 	return &Config{
 		// init metrics with dummies
-		mxZombieEvicted:          func(float64) {},
-		mxThrottleDuplicate:      func(float64) {},
-		mxRescheduled:            func(string, float64) {},
-		mxExecuteRoundTrips:      func(float64) {},
-		mxExecutionTimeDeviation: func(float64) {},
-		mxPlaceOrderLag:          func(float64) {},
-		mxExecutionDropped:       func(float64) {},
+		mxZombieEvicted:            func(float64) {},
+		mxThrottleDuplicate:        func(float64) {},
+		mxThrottleFirstRescheduled: func(float64) {},
+		mxRescheduled:              func(string, float64) {},
+		mxExecuteRoundTrips:        func(float64) {},
+		mxExecutionTimeDeviation:   func(float64) {},
+		mxPlaceOrderLag:            func(float64) {},
+		mxExecutionDropped:         func(float64) {},
 
 		// after 10 seconds we'll try to do a catchup.
 		orderCatchupTimeout: 10 * time.Second,
@@ -97,6 +103,13 @@ func (c *Config) WithMxExecutionTimeDeviation(h Observe) *Config {
 // duplicates/throttles for a throttling order
 func (c *Config) WithMxThrottleDuplicate(cnt Count) *Config {
 	c.mxThrottleDuplicate = cnt
+	return c
+}
+
+// WithMxThrottleFirstRescheduled sets a counter for measuring the number of
+// reschedules for orders configured with ThrottleFirstReschedule
+func (c *Config) WithMxThrottleFirstRescheduled(cnt Count) *Config {
+	c.mxThrottleFirstRescheduled = cnt
 	return c
 }
 

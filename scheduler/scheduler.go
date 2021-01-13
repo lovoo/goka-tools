@@ -293,7 +293,6 @@ func (w *waiter) wait(ctx goka.Context, msg interface{}) {
 }
 
 func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
-
 	newOrder := msg.(*Order)
 	// validate order and drop if in valid
 	if err := newOrder.validate(); err != nil {
@@ -336,7 +335,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 		if !s.waiters.reschedule(ctx, &Wait{ExecutionTime: newOrder.ExecutionTime}) {
 			s.executeOrder(ctx, newOrder)
 		}
-	case OrderType_ThrottleFirst:
+	case OrderType_ThrottleFirst, OrderType_ThrottleFirstReschedule:
 		// if we find an order whose execution time is way too old,
 		// we'll delete it and create a new one because we assume it must have gotten lost
 		// from broken waiters/changing intervals etc.
@@ -346,9 +345,25 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 			s.config.mxZombieEvicted(1)
 		}
 
+		// we have a order already, so we
 		if order != nil {
+			// (a) reschedule if the new order is configured to reschedule
+			// AND the new order's exec time is closer,
+			if newOrder.OrderType == OrderType_ThrottleFirstReschedule &&
+				newOrder.ExecutionTime.AsTime().Before(order.ExecutionTime.AsTime()) {
+				s.config.mxThrottleFirstRescheduled(1)
+				ctx.SetValue(newOrder)
+				if !s.waiters.reschedule(ctx, &Wait{ExecutionTime: newOrder.ExecutionTime}) {
+					s.executeOrder(ctx, newOrder)
+				}
+				return
+			}
+
+			// (b) drop it as it is a complete duplicate
 			// it's a valid duplicate, so we'll measure it and drop it.
 			s.config.mxThrottleDuplicate(1)
+
+			return
 		} else {
 			// if we're past execution time (plus some timeout value), and catchup is not ignored: execute immediately
 			if clk.Now().Sub(newOrder.ExecutionTime.AsTime()) > s.config.orderCatchupTimeout {

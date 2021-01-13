@@ -15,21 +15,17 @@ enum OrderType {
   // Send the first order's value
   ThrottleFirst = 2;
 
-  // delay ignoring intermediate orders
-  // send the last order's value
-  // Note that this imposes more pressure on the scheduler, as it updates the
-  // order on every
-  // request. So if the payload of the order is not important, you might want to
-  // use
-  // ThrottleFirst instead.
-  // *Not implemented yet*
-  ThrottleLast = 3;
+  // delay taking the shortest delay while waiting for the event.
+  // delays in future will be ignored and if the wait gets rescheduled,
+  // the later executions will get dropped
+  ThrottleFirstReschedule = 3;
 }
 
 message Order {
   Payload payload = 1;
   OrderType order_type = 2;
   int64 delay_ms = 3;
+  // marks the next or last execution time of the order.
   google.protobuf.Timestamp execution_time = 4;
 
   bool no_catchup = 5;
