@@ -15,6 +15,7 @@ import (
 
 	"github.com/lovoo/goka-tools/pg"
 	"github.com/lovoo/goka-tools/sqlstorage"
+	"github.com/lovoo/goka/multierr"
 	"github.com/lovoo/goka/storage"
 	"github.com/rcrowley/go-metrics"
 	"github.com/spf13/pflag"
@@ -44,10 +45,6 @@ var (
 	keys    []string
 	offset  int64
 	opcount int64
-)
-
-const (
-	keyChars = "0123456789abcdef"
 )
 
 func main() {
@@ -113,9 +110,24 @@ func main() {
 		cancel()
 	})
 
-	log.Printf("starting to run for %d seconds", *duration)
-	run(ctx, bm, st)
-	log.Printf("..done")
+	errg, ctx := multierr.NewErrGroup(ctx)
+
+	errg.Go(func() error {
+		bm.writeStats(ctx)
+		return nil
+	})
+
+	errg.Go(func() error {
+		log.Printf("starting to run for %d seconds", *duration)
+		run(ctx, bm, st)
+		log.Printf("..done")
+		return nil
+	})
+
+	err = errg.Wait().NilOrError()
+	if err != nil {
+		log.Fatalf("error running: %v", err)
+	}
 }
 
 func recover(ctx context.Context, bm *benchmetrics, st storage.Storage) {
@@ -138,7 +150,7 @@ func recover(ctx context.Context, bm *benchmetrics, st storage.Storage) {
 			log.Fatalf("error creating storage iterator: %v", err)
 		}
 		for it.Next() {
-			if len(keys)%100000 == 0 {
+			if len(keys) > 0 && len(keys)%100000 == 0 {
 				log.Printf("loaded %d keys", len(keys))
 			}
 			keys = append(keys, string(it.Key()))
@@ -287,6 +299,7 @@ func createStorage() storage.Storage {
 }
 
 type benchmetrics struct {
+	reg      metrics.Registry
 	readOps  metrics.Meter
 	writeOps metrics.Meter
 	allOps   metrics.Meter
@@ -298,6 +311,7 @@ func newMetrics(ctx context.Context) *benchmetrics {
 	reg := metrics.NewRegistry()
 
 	bm := &benchmetrics{
+		reg:      reg,
 		allOps:   metrics.NewRegisteredMeter("ops.all", reg),
 		readOps:  metrics.NewRegisteredMeter("ops.read", reg),
 		writeOps: metrics.NewRegisteredMeter("ops.write", reg),
@@ -306,12 +320,12 @@ func newMetrics(ctx context.Context) *benchmetrics {
 	metrics.RegisterRuntimeMemStats(reg)
 
 	go metrics.CaptureRuntimeMemStats(reg, 3*time.Second)
-
-	go writeStats(ctx, bm, reg)
 	return bm
 }
 
-func writeStats(ctx context.Context, bm *benchmetrics, reg metrics.Registry) {
+func (bm *benchmetrics) writeStats(ctx context.Context) {
+
+	start := time.Now()
 
 	var out io.Writer = os.Stdout
 	if *statsFile != "" {
@@ -331,7 +345,7 @@ func writeStats(ctx context.Context, bm *benchmetrics, reg metrics.Registry) {
 		fmt.Fprintf(out, "storage,numkeys,keylen,vallen,recov,commit,ops.all,ops.read,ops.write,mem\n")
 	}
 
-	ticker := time.NewTicker(20 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	var (
@@ -344,6 +358,8 @@ func writeStats(ctx context.Context, bm *benchmetrics, reg metrics.Registry) {
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
+			log.Printf("Summary")
+			log.Printf("ops 15min avg: %.0f", bm.allOps.RateMean())
 			return
 		}
 
@@ -362,12 +378,14 @@ func writeStats(ctx context.Context, bm *benchmetrics, reg metrics.Registry) {
 		lastOpsWrite = opsWriteNow
 
 		keyMapSize := int64(len(keys) * (*keyLength))
-		mem := reg.Get("runtime.MemStats.HeapAlloc").(metrics.Gauge).Value() - keyMapSize
+		mem := bm.reg.Get("runtime.MemStats.HeapAlloc").(metrics.Gauge).Value() - keyMapSize
 		// memory calculation has not started yet
 		if mem < 0 {
 			continue
 		}
-		fmt.Fprintf(out, "%s,%d,%d,%d,%d,%d,%.0f,%.0f,%.0f,%d\n",
+
+		fmt.Fprintf(out, "%04d,%s,%d,%d,%d,%d,%d,%.0f,%.0f,%.0f,%d\n",
+			int(time.Since(start).Seconds()),
 			*storageType,
 			*numKeys,
 			*keyLength,

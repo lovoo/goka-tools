@@ -3,7 +3,6 @@ package pg
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/akrylysov/pogreb"
 	"github.com/lovoo/goka/storage"
@@ -17,8 +16,8 @@ type sst struct {
 func Build(path string) (storage.Storage, error) {
 
 	db, err := pogreb.Open(path, &pogreb.Options{
-		BackgroundSyncInterval:       10 * time.Second,
-		BackgroundCompactionInterval: 15 * time.Second,
+		// BackgroundSyncInterval:       10 * time.Second,
+		// BackgroundCompactionInterval: 15 * time.Second,
 	})
 	if err != nil {
 		log.Fatalf("Error opening pogrep database: %v", err)
@@ -32,13 +31,13 @@ func Build(path string) (storage.Storage, error) {
 
 func (s *sst) Open() error {
 
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			m := s.db.Metrics()
-			log.Printf("put %d, gets %d, dels %d, collisions  %d", m.Puts.Value(), m.Gets.Value(), m.Dels.Value(), m.HashCollisions.Value())
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		time.Sleep(time.Second)
+	// 		m := s.db.Metrics()
+	// 		log.Printf("put %d, gets %d, dels %d, collisions  %d", m.Puts.Value(), m.Gets.Value(), m.Dels.Value(), m.HashCollisions.Value())
+	// 	}
+	// }()
 
 	return nil
 }
