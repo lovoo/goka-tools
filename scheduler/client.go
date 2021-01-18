@@ -16,7 +16,7 @@ func CreateDelayedOrderWithPrefix(targetKey []byte, targetTopic string, variant 
 	switch orderType {
 	case OrderType_Delay:
 		key = xid.New().String()
-	case OrderType_ThrottleFirst:
+	case OrderType_ThrottleFirst, OrderType_ThrottleFirstReschedule:
 		suffix := ""
 		if variant != "" {
 			suffix = "-" + variant

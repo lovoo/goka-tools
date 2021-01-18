@@ -23,6 +23,9 @@ There are two versions:
 * ThrottleFirst will send the first order's payload and will ignore following orders
 * ThrottleLast will send the last order's payload, so it will keep updating the target payload.
 
+## Testing
+
+The scheduler cannot be tested using goka's builtin `tester`-feature, so instead there are tests that require a running kafka-cluster. The easiest way is to run the kafka-cluster using `docker-compose`, provided in `goka/examples`. Then run `make full-test` to include the integration-tests that need kafka.
 
 ## Example
 
