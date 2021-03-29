@@ -10,18 +10,17 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/lovoo/goka-tools/pg"
 	"github.com/lovoo/goka-tools/sqlstorage"
-	"github.com/lovoo/goka/multierr"
 	"github.com/lovoo/goka/storage"
 	"github.com/rcrowley/go-metrics"
 	"github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 var (
@@ -32,9 +31,8 @@ var (
 	nthWrite    = pflag.Int("nth-write", 10, "which nth operation is a write. Default=100, i.e. every 100th operation is a write")
 	keyLength   = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
 	valueLength = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
-	reuseTable  = pflag.Bool("reuse", false, "if set to true, instead of rewriting keys, it will iterate the storage to get all keys")
+	recovery    = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
 	clearPath   = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
-	compact     = pflag.Bool("compact", false, "if set to true, compacts the database after loading")
 	storageType = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
 	noHeader    = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
 	duration    = pflag.Int("duration", 60, "duration in seconds to run after recovery")
@@ -51,6 +49,8 @@ func main() {
 
 	pflag.Parse()
 
+	os.MkdirAll(*path, os.ModeDir)
+
 	if *clearPath {
 		log.Printf("cleaning output path")
 		err := os.RemoveAll(*path)
@@ -59,6 +59,46 @@ func main() {
 		}
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// cancel when after a signal from terminal
+	wait := make(chan os.Signal, 1)
+	signal.Notify(wait, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-wait:
+			log.Printf("---- terminating due to interrupt ----")
+			cancel()
+		}
+	}()
+
+	bm := newMetrics(ctx)
+
+	statsDone := make(chan struct{})
+	go func() {
+		defer close(statsDone)
+		bm.writeStats(ctx)
+	}()
+
+	defer func() {
+		<-statsDone
+	}()
+
+	recover(ctx, bm)
+
+	// cancel the context after configured duration.
+	// We have to start the timer here, not using context.WithTimeout, because we want the timeout to be applied
+	// only for the "run"-part
+	time.AfterFunc(time.Duration(*duration)*time.Second, func() {
+		cancel()
+	})
+
+	run(ctx, bm)
+}
+
+func createAndOpenStorage(bm *benchmetrics) storage.Storage {
+	bm.setState("open")
 	var st storage.Storage
 	switch *storageType {
 	case "leveldb":
@@ -70,123 +110,80 @@ func main() {
 	default:
 		log.Fatalf("invalid storage type: %s", *storageType)
 	}
-
 	err := st.Open()
 	if err != nil {
 		log.Fatalf("Error opening database: %v", err)
 	}
-	defer func() {
-		if err := st.Close(); err != nil {
-			log.Fatalf("Error closing storage: %v", err)
-		} else {
-			log.Printf("closed database")
-		}
-	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// cancel when after a signal from terminal
-	wait := make(chan os.Signal, 1)
-	signal.Notify(wait, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		select {
-		case <-wait:
-			log.Printf("terminating due to interrupt")
-			cancel()
-		}
-	}()
-
-	bm := newMetrics(ctx)
-
-	recover(ctx, bm, st)
-
-	commit(ctx, bm, st)
-
-	// cancel the context after configured duration.
-	// We have to start the timer here, not using context.WithTimeout, because we want the timeout to be applied
-	// only for the "run"-part
-	time.AfterFunc(time.Duration(*duration)*time.Second, func() {
-		cancel()
-	})
-
-	errg, ctx := multierr.NewErrGroup(ctx)
-
-	errg.Go(func() error {
-		bm.writeStats(ctx)
-		return nil
-	})
-
-	errg.Go(func() error {
-		log.Printf("starting to run for %d seconds", *duration)
-		run(ctx, bm, st)
-		log.Printf("..done")
-		return nil
-	})
-
-	err = errg.Wait().NilOrError()
-	if err != nil {
-		log.Fatalf("error running: %v", err)
-	}
+	return st
 }
 
-func recover(ctx context.Context, bm *benchmetrics, st storage.Storage) {
-	start := time.Now()
-	defer func() {
-		bm.recover = time.Since(start)
-	}()
+func recover(ctx context.Context, bm *benchmetrics) {
+	bm.setState("recover")
 
-	if *reuseTable {
-		log.Printf("loading data from table")
-		it, err := st.Iterator()
-		defer it.Release()
+	st := createAndOpenStorage(bm)
 
+	log.Printf("creating %d keys, and initializing database", *numKeys)
+	for i := 0; i < *numKeys; i++ {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		if err != nil {
-			log.Fatalf("error creating storage iterator: %v", err)
-		}
-		for it.Next() {
-			if len(keys) > 0 && len(keys)%100000 == 0 {
-				log.Printf("loaded %d keys", len(keys))
-			}
-			keys = append(keys, string(it.Key()))
-		}
-
-		if len(keys) == 0 {
-			log.Fatalf("database was empty. does not make sense to reuse")
-		}
-		log.Printf("Read %d keys from database", len(keys))
-	} else {
-
-		log.Printf("creating %d keys, and initializing database", *numKeys)
-		for i := 0; i < *numKeys; i++ {
-
-			key := makeKey()
-			keys = append(keys, key)
-			write(st, key)
-		}
+		key := makeKey()
+		keys = append(keys, key)
+		bm.write()
+		write(st, key)
 	}
+
+	bm.setState("commit")
+	blockWithContext(ctx, "marking storage recovered", st.MarkRecovered)
+	blockWithContext(ctx, "closing storage", func() error {
+		bm.setState("close")
+		return st.Close()
+	})
 }
 
-func commit(ctx context.Context, bm *benchmetrics, st storage.Storage) {
-	start := time.Now()
-	defer func() {
-		bm.commit = time.Since(start)
+func blockWithContext(ctx context.Context, msg string, blocker func() error) {
+
+	log.Printf("%s", msg)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := blocker(); err != nil {
+			log.Fatalf("... error: %v", err)
+		}
 	}()
 
-	// ctx is currently not used, because MarkRecovered does not support it.
-	log.Printf("committing after recovery")
-	if err := st.MarkRecovered(); err != nil {
-		log.Fatalf("marking storage as recovered failed: %v", err)
+	select {
+	case <-ctx.Done():
+		log.Printf("... aborted by context cancelled")
+	case <-done:
+		log.Printf("... done")
 	}
-	log.Printf("Commit done")
 }
 
-func run(ctx context.Context, bm *benchmetrics, st storage.Storage) {
+func run(ctx context.Context, bm *benchmetrics) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	bm.setState("prepare")
+	var st storage.Storage
+	blockWithContext(ctx, "opening storage", func() error {
+		st = createAndOpenStorage(bm)
+		return nil
+	})
+
+	blockWithContext(ctx, "marking storage recovered", st.MarkRecovered)
+	defer blockWithContext(ctx, "closing storage", func() error {
+		bm.setState("close")
+		return st.Close()
+	})
+
+	bm.setState("running")
 
 	var ops int64
 	for {
@@ -202,20 +199,18 @@ func run(ctx context.Context, bm *benchmetrics, st storage.Storage) {
 
 		isWrite := ops%int64(*nthWrite) == 0
 
-		bm.allOps.Mark(1)
 		// we should write
 		if isWrite {
-			bm.writeOps.Mark(1)
+			bm.write()
 			write(st, key)
 		} else {
-			bm.readOps.Mark(1)
+			bm.read()
 			// we should read
 			_, err := st.Get(key)
 			if err != nil {
 				log.Fatalf("Error reading key: %v", err)
 			}
 		}
-
 	}
 }
 
@@ -225,7 +220,7 @@ func makeKey() string {
 	val := make([]byte, byteLength)
 	n, err := rand.Read(val)
 	if n != byteLength || err != nil {
-		log.Fatalf("error generating key: %v", err)
+		log.Fatalf("error generating kssdfsdfey: %v", err)
 	}
 	return hex.EncodeToString(val)
 }
@@ -278,17 +273,6 @@ func createStorage() storage.Storage {
 		log.Fatalf("error opening leveldb: %v", err)
 	}
 
-	if *compact {
-		log.Printf("starting compaction")
-		err = db.CompactRange(util.Range{})
-		if err != nil {
-			log.Fatalf("error compacting: %v", err)
-		}
-		log.Printf("compaction done")
-	} else {
-		log.Printf("skipping compaction")
-	}
-
 	st, err := storage.New(db)
 	log.Printf("loading storage done")
 	if err != nil {
@@ -299,28 +283,36 @@ func createStorage() storage.Storage {
 }
 
 type benchmetrics struct {
-	reg      metrics.Registry
-	readOps  metrics.Meter
-	writeOps metrics.Meter
-	allOps   metrics.Meter
-	recover  time.Duration
-	commit   time.Duration
+	state  string
+	writes int64
+	reads  int64
+	reg    metrics.Registry
 }
 
 func newMetrics(ctx context.Context) *benchmetrics {
 	reg := metrics.NewRegistry()
 
 	bm := &benchmetrics{
-		reg:      reg,
-		allOps:   metrics.NewRegisteredMeter("ops.all", reg),
-		readOps:  metrics.NewRegisteredMeter("ops.read", reg),
-		writeOps: metrics.NewRegisteredMeter("ops.write", reg),
+		reg: reg,
 	}
 
 	metrics.RegisterRuntimeMemStats(reg)
 
 	go metrics.CaptureRuntimeMemStats(reg, 3*time.Second)
 	return bm
+}
+
+func (bm *benchmetrics) setState(state string) {
+	log.Printf("entering state %s", state)
+	bm.state = state
+}
+
+func (bm *benchmetrics) write() {
+	atomic.AddInt64(&bm.writes, 1)
+}
+
+func (bm *benchmetrics) read() {
+	atomic.AddInt64(&bm.reads, 1)
 }
 
 func (bm *benchmetrics) writeStats(ctx context.Context) {
@@ -341,56 +333,45 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 		out = outFile
 	}
 
-	if !*noHeader {
-		fmt.Fprintf(out, "storage,numkeys,keylen,vallen,recov,commit,ops.all,ops.read,ops.write,mem\n")
-	}
+	fmt.Fprintf(out, "time,state,reads,writes,total,mem\n")
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	var (
-		last         = time.Now()
-		lastOpsAll   int64
-		lastOpsRead  int64
-		lastOpsWrite int64
+		last = time.Now()
 	)
 	for {
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
-			log.Printf("Summary")
-			log.Printf("ops 15min avg: %.0f", bm.allOps.RateMean())
 			return
 		}
 
-		recov := bm.recover.Milliseconds()
-		commit := bm.commit.Milliseconds()
 		now := time.Now()
-		opsAllNow := bm.allOps.Count()
-		opsReadNow := bm.readOps.Count()
-		opsWriteNow := bm.writeOps.Count()
-		opsAll := float64(opsAllNow-lastOpsAll) / now.Sub(last).Seconds()
-		opsRead := float64(opsReadNow-lastOpsRead) / now.Sub(last).Seconds()
-		opsWrite := float64(opsWriteNow-lastOpsWrite) / now.Sub(last).Seconds()
-		last = now
-		lastOpsAll = opsAllNow
-		lastOpsRead = opsReadNow
-		lastOpsWrite = opsWriteNow
+		reads := atomic.SwapInt64(&bm.reads, 0)
+		writes := atomic.SwapInt64(&bm.writes, 0)
+
+		secDiff := now.Sub(last).Seconds()
+
+		readsPerSecond := float64(reads) / secDiff
+		writesPerSecond := float64(writes) / secDiff
+		opsPerSecond := float64(reads+writes) / secDiff
 
 		keyMapSize := int64(len(keys) * (*keyLength))
 		mem := bm.reg.Get("runtime.MemStats.HeapAlloc").(metrics.Gauge).Value() - keyMapSize
 		// memory calculation has not started yet
 		if mem < 0 {
-			continue
+			mem = 0.0
 		}
 
-		fmt.Fprintf(out, "%04d,%s,%d,%d,%d,%d,%d,%.0f,%.0f,%.0f,%d\n",
+		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%d\n",
 			int(time.Since(start).Seconds()),
-			*storageType,
-			*numKeys,
-			*keyLength,
-			*valueLength,
-			recov, commit, opsAll, opsRead, opsWrite, mem)
+			bm.state,
+			readsPerSecond,
+			writesPerSecond,
+			opsPerSecond,
+			mem)
 
 	}
 }

@@ -9,16 +9,15 @@ test:
 	GOPATH=$(GOPATH) go test ./...
 
 build-bench:
-	CGO_ENABELD=1 go build -o build/stbench cmd/stbench/main.go
 	docker build -t stbench -f cmd/stbench/Dockerfile .
 
 run-leveldb:
-	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v /home/franz/docker:/out --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:300 --device-read-iops=/dev/dm-0:300 --device-write-bps=/dev/dm-0:5mb \
-			--device-read-bps=/dev/dm-0:5mb \
-			stbench /stbench --keys=1000000 \
-			 --path /out/devicetracker --storage=leveldb \
+	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v `pwd`/stbench_eval_out:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:300 --device-read-iops=/dev/dm-0:300 --device-write-bps=/dev/dm-0:10mb \
+			--device-read-bps=/dev/dm-0:10mb \
+			stbench /stbench --keys=100000 \
+			 --path /out/leveldb/ --storage=leveldb \
 			--clear \
-			--stats /out/stats/leveldb-1m-stats
+			--stats /out/leveldb/stats.csv
 	
 run-pogrep:
 	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v /home/franz/docker:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:300 --device-read-iops=/dev/dm-0:300 --device-write-bps=/dev/dm-0:5mb \
