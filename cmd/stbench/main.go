@@ -87,14 +87,7 @@ func main() {
 
 	recover(ctx, bm)
 
-	// cancel the context after configured duration.
-	// We have to start the timer here, not using context.WithTimeout, because we want the timeout to be applied
-	// only for the "run"-part
-	time.AfterFunc(time.Duration(*duration)*time.Second, func() {
-		cancel()
-	})
-
-	run(ctx, bm)
+	run(ctx, bm, cancel)
 }
 
 func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
@@ -166,7 +159,7 @@ func blockWithContext(ctx context.Context, msg string, blocker func() error) {
 	}
 }
 
-func run(ctx context.Context, bm *benchmetrics) {
+func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
 	select {
 	case <-ctx.Done():
 		return
@@ -187,6 +180,13 @@ func run(ctx context.Context, bm *benchmetrics) {
 	})
 
 	bm.setState("running")
+
+	// cancel the context after configured duration.
+	// We have to start the timer here, not using context.WithTimeout, because we want the timeout to be applied
+	// only for the "run"-part
+	time.AfterFunc(time.Duration(*duration)*time.Second, func() {
+		cancel()
+	})
 
 	var ops int64
 	for {
