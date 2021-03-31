@@ -49,8 +49,6 @@ func main() {
 
 	pflag.Parse()
 
-	os.MkdirAll(*path, os.ModeDir)
-
 	if *clearPath {
 		log.Printf("cleaning output path")
 		err := os.RemoveAll(*path)
@@ -58,6 +56,8 @@ func main() {
 			log.Fatalf("Error removing path %s: %v", *path, err)
 		}
 	}
+
+	os.MkdirAll(*path, os.ModePerm)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -73,7 +73,7 @@ func main() {
 		}
 	}()
 
-	bm := newMetrics(ctx)
+	bm := newMetrics(ctx, *path)
 
 	statsDone := make(chan struct{})
 	go func() {
@@ -97,8 +97,8 @@ func main() {
 	run(ctx, bm)
 }
 
-func createAndOpenStorage(bm *benchmetrics) storage.Storage {
-	bm.setState("open")
+func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
+	bm.setState(phase)
 	var st storage.Storage
 	switch *storageType {
 	case "leveldb":
@@ -119,9 +119,12 @@ func createAndOpenStorage(bm *benchmetrics) storage.Storage {
 }
 
 func recover(ctx context.Context, bm *benchmetrics) {
+	var st storage.Storage
+	blockWithContext(ctx, "opening storage", func() error {
+		st = createAndOpenStorage(bm, "open")
+		return nil
+	})
 	bm.setState("recover")
-
-	st := createAndOpenStorage(bm)
 
 	log.Printf("creating %d keys, and initializing database", *numKeys)
 	for i := 0; i < *numKeys; i++ {
@@ -170,13 +173,13 @@ func run(ctx context.Context, bm *benchmetrics) {
 	default:
 	}
 
-	bm.setState("prepare")
 	var st storage.Storage
 	blockWithContext(ctx, "opening storage", func() error {
-		st = createAndOpenStorage(bm)
+		st = createAndOpenStorage(bm, "reopen")
 		return nil
 	})
 
+	bm.setState("commit")
 	blockWithContext(ctx, "marking storage recovered", st.MarkRecovered)
 	defer blockWithContext(ctx, "closing storage", func() error {
 		bm.setState("close")
@@ -283,13 +286,15 @@ func createStorage() storage.Storage {
 }
 
 type benchmetrics struct {
-	state  string
-	writes int64
-	reads  int64
-	reg    metrics.Registry
+	state     string
+	writes    int64
+	reads     int64
+	reg       metrics.Registry
+	diskusage int64
+	files     int64
 }
 
-func newMetrics(ctx context.Context) *benchmetrics {
+func newMetrics(ctx context.Context, path string) *benchmetrics {
 	reg := metrics.NewRegistry()
 
 	bm := &benchmetrics{
@@ -299,6 +304,41 @@ func newMetrics(ctx context.Context) *benchmetrics {
 	metrics.RegisterRuntimeMemStats(reg)
 
 	go metrics.CaptureRuntimeMemStats(reg, 3*time.Second)
+
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+
+				var size int64
+				var files int64
+				err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if !info.IsDir() {
+						size += info.Size()
+						files++
+					}
+					return nil
+				})
+				if err != nil {
+					log.Printf("error getting file size/files: %v", err)
+				}
+
+				atomic.StoreInt64(&bm.files, files)
+				// disk-usage is blocks*blocksize  - free-blocks*block-size
+				atomic.StoreInt64(&bm.diskusage, size)
+
+				ticker.Reset(2 * time.Second)
+			}
+		}
+	}()
 	return bm
 }
 
@@ -333,7 +373,7 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 		out = outFile
 	}
 
-	fmt.Fprintf(out, "time,state,reads,writes,total,mem\n")
+	fmt.Fprintf(out, "time,state,reads,writes,total,mem,disk,files\n")
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -365,13 +405,16 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 			mem = 0.0
 		}
 
-		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%d\n",
+		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%d,%d,%d\n",
 			int(time.Since(start).Seconds()),
 			bm.state,
 			readsPerSecond,
 			writesPerSecond,
 			opsPerSecond,
-			mem)
+			mem,
+			bm.diskusage,
+			bm.files,
+		)
 
 	}
 }
