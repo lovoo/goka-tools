@@ -24,26 +24,26 @@ import (
 )
 
 var (
-	path            = pflag.String("path", "/tmp/sbench", "path to sbench. Defaults to /tmp/sbench-<now>")
-	topic           = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
-	partition       = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
-	numKeys         = pflag.Int("keys", 5000000, "number of different keys to use")
-	relativeUpdate  = pflag.Float64("updates", 0.1, "proportion of the number of keys (from all keys), whose value will be updated.")
-	relativeReads   = pflag.Float64("reads", 1, "proportion of the number of keys (from all keys), that will be read.")
-	relativeInserts = pflag.Float64("inserts", 0.1, "proportion of new keys that will be inserted after recovery.")
-	iterate         = pflag.Bool("iterate", true, "iterate once through the whole storage.")
-	keyLength       = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
-	valueLength     = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
-	recovery        = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
-	clearPath       = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
-	storageType     = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
-	noHeader        = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
-	statsFile       = pflag.String("stats", "", "file to stats")
+	path        = pflag.String("path", "/tmp/sbench", "path to sbench. Defaults to /tmp/sbench-<now>")
+	topic       = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
+	partition   = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
+	numKeys     = pflag.Int("keys", 5000000, "number of different keys to use")
+	updates     = pflag.Int("updates", 1, "proportion of the number of keys (from all keys), whose value will be updated.")
+	reads       = pflag.Int("reads", 10, "proportion of the number of keys (from all keys), that will be read.")
+	inserts     = pflag.Int("inserts", 1, "proportion of new keys that will be inserted after recovery.")
+	duration    = pflag.Int("duration", 60, "duration in seconds to run operations")
+	iterate     = pflag.Bool("iterate", true, "iterate once through the whole storage.")
+	keyLength   = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
+	valueLength = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
+	recovery    = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
+	clearPath   = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
+	storageType = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
+	noHeader    = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
+	statsFile   = pflag.String("stats", "", "file to stats")
 )
 
 var (
 	keys    []string
-	offset  int64
 	opcount int64
 )
 
@@ -89,7 +89,8 @@ func main() {
 
 	recover(ctx, bm)
 
-	run(ctx, bm, cancel)
+	run(ctx, bm)
+	cancel()
 }
 
 func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
@@ -169,12 +170,7 @@ const (
 	insert
 )
 
-type operation struct {
-	key       string
-	operation opType
-}
-
-func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
+func run(ctx context.Context, bm *benchmetrics) {
 	select {
 	case <-ctx.Done():
 		return
@@ -195,10 +191,9 @@ func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
 	})
 
 	bm.setState("prepare-run")
-	numKeys := float64(len(keys))
-	runnerOps := append(append(createOps(ctx, update, int(*relativeUpdate*numKeys)),
-		createOps(ctx, read, int(*relativeReads*numKeys))...),
-		createOps(ctx, insert, int(*relativeInserts*numKeys))...,
+	runnerOps := append(append(createOps(ctx, update, *updates),
+		createOps(ctx, read, *reads)...),
+		createOps(ctx, insert, *inserts)...,
 	)
 	rand.Shuffle(len(runnerOps), func(i, j int) {
 		runnerOps[i], runnerOps[j] = runnerOps[j], runnerOps[i]
@@ -206,26 +201,35 @@ func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
 
 	bm.setState("running")
 
-	for _, op := range runnerOps {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(*duration)*time.Second)
+	defer cancel()
+
+	var idx int
+
+runLoop:
+	for {
 		select {
 		case <-ctx.Done():
-			return
+			break runLoop
 		default:
 		}
 
-		switch op.operation {
+		op := runnerOps[idx%len(runnerOps)]
+		switch op {
 		case read:
 			bm.read()
-			_, err := st.Get(op.key)
+			key := keys[rand.Intn(len(keys))]
+			_, err := st.Get(key)
 			if err != nil {
 				log.Fatalf("Error reading key: %v", err)
 			}
 		case update:
 			bm.update()
-			writeValue(st, op.key)
+			writeValue(st, makeKey())
 		case insert:
 			bm.insert()
-			writeValue(st, op.key)
+			key := keys[rand.Intn(len(keys))]
+			writeValue(st, key)
 		default:
 			panic("unsupported operation")
 		}
@@ -246,21 +250,11 @@ func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
 	}
 }
 
-func createOps(ctx context.Context, opt opType, number int) []operation {
-	ops := make([]operation, 0, number)
+func createOps(ctx context.Context, opt opType, number int) []opType {
+	ops := make([]opType, 0, number*10)
 
-	for i := 0; i < number; i++ {
-		if opt == insert {
-			ops = append(ops, operation{
-				key:       makeKey(),
-				operation: opt,
-			})
-		} else {
-			ops = append(ops, operation{
-				key:       keys[rand.Intn(len(keys))],
-				operation: opt,
-			})
-		}
+	for i := 0; i < number*10; i++ {
+		ops = append(ops, opt)
 	}
 	return ops
 }
@@ -281,8 +275,6 @@ func writeValue(st storage.Storage, key string) {
 	rand.Read(value)
 
 	st.Set(key, value)
-	offset++
-	st.SetOffset(offset)
 }
 
 func createPogrepStorage() storage.Storage {
