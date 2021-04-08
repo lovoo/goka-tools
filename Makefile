@@ -14,7 +14,7 @@ build-bench:
 run-leveldb:
 	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v `pwd`/stbench_eval_out:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:300 --device-read-iops=/dev/dm-0:300 --device-write-bps=/dev/dm-0:10mb \
 			--device-read-bps=/dev/dm-0:10mb \
-			stbench /stbench --keys=2000000 \
+			stbench /stbench --keys=500000 \
 			 --path /out/leveldb/ --storage=leveldb \
 			--clear \
 			--stats /out/leveldb/stats.csv

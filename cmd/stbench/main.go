@@ -24,19 +24,21 @@ import (
 )
 
 var (
-	path        = pflag.String("path", "/tmp/sbench", "path to sbench. Defaults to /tmp/sbench-<now>")
-	topic       = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
-	partition   = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
-	numKeys     = pflag.Int("keys", 5000000, "number of different keys to use")
-	nthWrite    = pflag.Int("nth-write", 10, "which nth operation is a write. Default=100, i.e. every 100th operation is a write")
-	keyLength   = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
-	valueLength = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
-	recovery    = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
-	clearPath   = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
-	storageType = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
-	noHeader    = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
-	duration    = pflag.Int("duration", 60, "duration in seconds to run after recovery")
-	statsFile   = pflag.String("stats", "", "file to stats")
+	path            = pflag.String("path", "/tmp/sbench", "path to sbench. Defaults to /tmp/sbench-<now>")
+	topic           = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
+	partition       = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
+	numKeys         = pflag.Int("keys", 5000000, "number of different keys to use")
+	relativeUpdate  = pflag.Float64("updates", 0.1, "proportion of the number of keys (from all keys), whose value will be updated.")
+	relativeReads   = pflag.Float64("reads", 1, "proportion of the number of keys (from all keys), that will be read.")
+	relativeInserts = pflag.Float64("inserts", 0.1, "proportion of new keys that will be inserted after recovery.")
+	iterate         = pflag.Bool("iterate", true, "iterate once through the whole storage.")
+	keyLength       = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
+	valueLength     = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
+	recovery        = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
+	clearPath       = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
+	storageType     = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
+	noHeader        = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
+	statsFile       = pflag.String("stats", "", "file to stats")
 )
 
 var (
@@ -128,8 +130,8 @@ func recover(ctx context.Context, bm *benchmetrics) {
 		}
 		key := makeKey()
 		keys = append(keys, key)
-		bm.write()
-		write(st, key)
+		bm.insert()
+		writeValue(st, key)
 	}
 
 	bm.setState("commit")
@@ -159,6 +161,19 @@ func blockWithContext(ctx context.Context, msg string, blocker func() error) {
 	}
 }
 
+type opType int
+
+const (
+	read opType = iota
+	update
+	insert
+)
+
+type operation struct {
+	key       string
+	operation opType
+}
+
 func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
 	select {
 	case <-ctx.Done():
@@ -179,42 +194,75 @@ func run(ctx context.Context, bm *benchmetrics, cancel context.CancelFunc) {
 		return st.Close()
 	})
 
-	bm.setState("running")
-
-	// cancel the context after configured duration.
-	// We have to start the timer here, not using context.WithTimeout, because we want the timeout to be applied
-	// only for the "run"-part
-	time.AfterFunc(time.Duration(*duration)*time.Second, func() {
-		cancel()
+	bm.setState("prepare-run")
+	numKeys := float64(len(keys))
+	runnerOps := append(append(createOps(ctx, update, int(*relativeUpdate*numKeys)),
+		createOps(ctx, read, int(*relativeReads*numKeys))...),
+		createOps(ctx, insert, int(*relativeInserts*numKeys))...,
+	)
+	rand.Shuffle(len(runnerOps), func(i, j int) {
+		runnerOps[i], runnerOps[j] = runnerOps[j], runnerOps[i]
 	})
 
-	var ops int64
-	for {
+	bm.setState("running")
+
+	for _, op := range runnerOps {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
 
-		ops++
-
-		key := keys[rand.Intn(len(keys))]
-
-		isWrite := ops%int64(*nthWrite) == 0
-
-		// we should write
-		if isWrite {
-			bm.write()
-			write(st, key)
-		} else {
+		switch op.operation {
+		case read:
 			bm.read()
-			// we should read
-			_, err := st.Get(key)
+			_, err := st.Get(op.key)
 			if err != nil {
 				log.Fatalf("Error reading key: %v", err)
 			}
+		case update:
+			bm.update()
+			writeValue(st, op.key)
+		case insert:
+			bm.insert()
+			writeValue(st, op.key)
+		default:
+			panic("unsupported operation")
 		}
 	}
+
+	if *iterate {
+		it, err := st.Iterator()
+		if err != nil {
+			log.Fatalf("error creating iterator: %v", err)
+		}
+		defer it.Release()
+
+		bm.setState("iterate")
+		for it.Next() {
+			_ = it.Key()
+			_, _ = it.Value()
+		}
+	}
+}
+
+func createOps(ctx context.Context, opt opType, number int) []operation {
+	ops := make([]operation, 0, number)
+
+	for i := 0; i < number; i++ {
+		if opt == insert {
+			ops = append(ops, operation{
+				key:       makeKey(),
+				operation: opt,
+			})
+		} else {
+			ops = append(ops, operation{
+				key:       keys[rand.Intn(len(keys))],
+				operation: opt,
+			})
+		}
+	}
+	return ops
 }
 
 func makeKey() string {
@@ -228,7 +276,7 @@ func makeKey() string {
 	return hex.EncodeToString(val)
 }
 
-func write(st storage.Storage, key string) {
+func writeValue(st storage.Storage, key string) {
 	value := make([]byte, *valueLength)
 	rand.Read(value)
 
@@ -287,7 +335,8 @@ func createStorage() storage.Storage {
 
 type benchmetrics struct {
 	state     string
-	writes    int64
+	updates   int64
+	inserts   int64
 	reads     int64
 	reg       metrics.Registry
 	diskusage int64
@@ -347,8 +396,11 @@ func (bm *benchmetrics) setState(state string) {
 	bm.state = state
 }
 
-func (bm *benchmetrics) write() {
-	atomic.AddInt64(&bm.writes, 1)
+func (bm *benchmetrics) update() {
+	atomic.AddInt64(&bm.updates, 1)
+}
+func (bm *benchmetrics) insert() {
+	atomic.AddInt64(&bm.inserts, 1)
 }
 
 func (bm *benchmetrics) read() {
@@ -373,7 +425,7 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 		out = outFile
 	}
 
-	fmt.Fprintf(out, "time,state,reads,writes,total,mem,disk,files\n")
+	fmt.Fprintf(out, "time,state,reads,updates,inserts,total,mem,disk,files\n")
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -390,13 +442,15 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 
 		now := time.Now()
 		reads := atomic.SwapInt64(&bm.reads, 0)
-		writes := atomic.SwapInt64(&bm.writes, 0)
+		updates := atomic.SwapInt64(&bm.updates, 0)
+		inserts := atomic.SwapInt64(&bm.inserts, 0)
 
 		secDiff := now.Sub(last).Seconds()
 
 		readsPerSecond := float64(reads) / secDiff
-		writesPerSecond := float64(writes) / secDiff
-		opsPerSecond := float64(reads+writes) / secDiff
+		updatesPerSecond := float64(updates) / secDiff
+		insertsPerSecond := float64(inserts) / secDiff
+		opsPerSecond := float64(reads+updates+inserts) / secDiff
 
 		keyMapSize := int64(len(keys) * (*keyLength))
 		mem := bm.reg.Get("runtime.MemStats.HeapAlloc").(metrics.Gauge).Value() - keyMapSize
@@ -405,11 +459,12 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 			mem = 0.0
 		}
 
-		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%d,%d,%d\n",
+		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%.0f,%d,%d,%d\n",
 			int(time.Since(start).Seconds()),
 			bm.state,
 			readsPerSecond,
-			writesPerSecond,
+			updatesPerSecond,
+			insertsPerSecond,
 			opsPerSecond,
 			mem,
 			bm.diskusage,
