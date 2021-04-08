@@ -210,6 +210,7 @@ runLoop:
 	for {
 		select {
 		case <-ctx.Done():
+			fmt.Println()
 			break runLoop
 		default:
 		}
@@ -233,6 +234,7 @@ runLoop:
 		default:
 			panic("unsupported operation")
 		}
+		idx++
 	}
 
 	if *iterate {
