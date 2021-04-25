@@ -5,11 +5,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -17,29 +21,29 @@ import (
 	"github.com/lovoo/goka-tools/pg"
 	"github.com/lovoo/goka-tools/sqlstorage"
 	"github.com/lovoo/goka/storage"
-	"github.com/rcrowley/go-metrics"
 	"github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 var (
-	path        = pflag.String("path", "/tmp/sbench", "path to sbench. Defaults to /tmp/sbench-<now>")
-	topic       = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
-	partition   = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
-	numKeys     = pflag.Int("keys", 5000000, "number of different keys to use")
-	updates     = pflag.Int("updates", 1, "proportion of the number of keys (from all keys), whose value will be updated.")
-	reads       = pflag.Int("reads", 10, "proportion of the number of keys (from all keys), that will be read.")
-	inserts     = pflag.Int("inserts", 1, "proportion of new keys that will be inserted after recovery.")
-	duration    = pflag.Int("duration", 60, "duration in seconds to run operations")
-	iterate     = pflag.Bool("iterate", true, "iterate once through the whole storage.")
-	keyLength   = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
-	valueLength = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
-	recovery    = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
-	clearPath   = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
-	storageType = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
-	noHeader    = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
-	statsFile   = pflag.String("stats", "", "file to stats")
+	path           = pflag.String("path", "/tmp/sbench", "path to sbench. Defaults to /tmp/sbench-<now>")
+	topic          = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
+	partition      = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
+	numKeys        = pflag.Int("keys", 5000000, "number of different keys to use")
+	updates        = pflag.Int("updates", 1, "proportion of the number of keys (from all keys), whose value will be updated.")
+	reads          = pflag.Int("reads", 10, "proportion of the number of keys (from all keys), that will be read.")
+	inserts        = pflag.Int("inserts", 1, "proportion of new keys that will be inserted after recovery.")
+	duration       = pflag.Int("duration", 60, "duration in seconds to run operations")
+	iterateTimeout = pflag.Int("iterate-timeout", 10, "duration in seconds to run iteration, or 0 to iterate thorugh the whole storage")
+	enableIterate  = pflag.Bool("iterate", true, "iterate once through the whole storage.")
+	keyLength      = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
+	valueLength    = pflag.Int("val-len", 500, "length of the value in bytes. Default is 500")
+	recovery       = pflag.Bool("recovery", false, "if set to true, simluates recovery by inserting each key once")
+	clearPath      = pflag.Bool("clear", false, "if set to true, deletes the value passed to 'path' before running.")
+	storageType    = pflag.String("storage", "leveldb", "storage to use. defaults to leveldb")
+	noHeader       = pflag.Bool("no-header", false, "if set to true, the stats won't print the header")
+	statsFile      = pflag.String("stats", "", "file to stats")
 )
 
 var (
@@ -90,6 +94,9 @@ func main() {
 	recover(ctx, bm)
 
 	run(ctx, bm)
+
+	iterate(ctx, bm)
+
 	cancel()
 }
 
@@ -131,8 +138,9 @@ func recover(ctx context.Context, bm *benchmetrics) {
 		}
 		key := makeKey()
 		keys = append(keys, key)
-		bm.insert()
+		s := time.Now()
 		writeValue(st, key)
+		bm.insert(time.Since(s))
 	}
 
 	bm.setState("commit")
@@ -206,49 +214,87 @@ func run(ctx context.Context, bm *benchmetrics) {
 
 	var idx int
 
-runLoop:
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println()
-			break runLoop
+			return
 		default:
 		}
 
 		op := runnerOps[idx%len(runnerOps)]
 		switch op {
 		case read:
-			bm.read()
 			key := keys[rand.Intn(len(keys))]
+			s := time.Now()
 			_, err := st.Get(key)
 			if err != nil {
 				log.Fatalf("Error reading key: %v", err)
 			}
+			bm.read(time.Since(s))
 		case update:
-			bm.update()
+			s := time.Now()
 			writeValue(st, makeKey())
+			bm.update(time.Since(s))
 		case insert:
-			bm.insert()
 			key := keys[rand.Intn(len(keys))]
+			s := time.Now()
 			writeValue(st, key)
+			bm.insert(time.Since(s))
 		default:
 			panic("unsupported operation")
 		}
 		idx++
 	}
+}
 
-	if *iterate {
-		it, err := st.Iterator()
-		if err != nil {
-			log.Fatalf("error creating iterator: %v", err)
-		}
-		defer it.Release()
+func iterate(ctx context.Context, bm *benchmetrics) {
 
-		bm.setState("iterate")
-		for it.Next() {
-			_ = it.Key()
-			_, _ = it.Value()
+	if !*enableIterate {
+		return
+	}
+
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	var st storage.Storage
+	blockWithContext(ctx, "opening storage", func() error {
+		st = createAndOpenStorage(bm, "reopen")
+		return nil
+	})
+
+	blockWithContext(ctx, "marking storage recovered", st.MarkRecovered)
+	defer blockWithContext(ctx, "closing storage", func() error {
+		bm.setState("close")
+		return st.Close()
+	})
+
+	it, err := st.Iterator()
+	if err != nil {
+		log.Fatalf("error creating iterator: %v", err)
+	}
+	defer it.Release()
+
+	if *iterateTimeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(*iterateTimeout)*time.Second)
+		defer cancel()
+	}
+
+	bm.setState("iterate")
+	s := time.Now()
+	for it.Next() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
+		_ = it.Key()
+		_, _ = it.Value()
+		bm.read(time.Since(s))
+		s = time.Now()
 	}
 }
 
@@ -328,25 +374,22 @@ func createStorage() storage.Storage {
 }
 
 type benchmetrics struct {
-	state     string
-	updates   int64
-	inserts   int64
-	reads     int64
-	reg       metrics.Registry
-	diskusage int64
-	files     int64
+	sync.Mutex
+
+	state           string
+	updates         int64
+	updateLatencies int64
+	inserts         int64
+	insertLatencies int64
+	reads           int64
+	readLatencies   int64
+	diskusage       int64
+	files           int64
+	memory          int64
 }
 
 func newMetrics(ctx context.Context, path string) *benchmetrics {
-	reg := metrics.NewRegistry()
-
-	bm := &benchmetrics{
-		reg: reg,
-	}
-
-	metrics.RegisterRuntimeMemStats(reg)
-
-	go metrics.CaptureRuntimeMemStats(reg, 3*time.Second)
+	bm := &benchmetrics{}
 
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -378,6 +421,9 @@ func newMetrics(ctx context.Context, path string) *benchmetrics {
 				// disk-usage is blocks*blocksize  - free-blocks*block-size
 				atomic.StoreInt64(&bm.diskusage, size)
 
+				mem := readFileValue("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+				cache := readFileLineValue("/sys/fs/cgroup/memory/memory.stat", "total_inactive_file")
+				bm.memory = mem - cache
 				ticker.Reset(2 * time.Second)
 			}
 		}
@@ -385,20 +431,100 @@ func newMetrics(ctx context.Context, path string) *benchmetrics {
 	return bm
 }
 
+func readFileValue(file string) int64 {
+
+	memusage, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.Printf("err reading mem usage: %v", err)
+	} else {
+		value, err := strconv.ParseInt(strings.TrimSpace(string(memusage)), 10, 64)
+		if err != nil {
+			log.Printf("error parsing memory usage %s: %v", string(memusage), err)
+		}
+		return value
+	}
+	return 0
+}
+
+func readFileLineValue(file string, prefix string) int64 {
+	contents, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.Printf("err reading mem usage: %v", err)
+		return 0
+	}
+
+	for _, line := range strings.Split(string(contents), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			value, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, prefix)), 10, 64)
+			if err != nil {
+				log.Printf("error parsing memory usage %s: %v", string(line), err)
+			}
+			return value
+		}
+	}
+	return 0
+}
+
 func (bm *benchmetrics) setState(state string) {
 	log.Printf("entering state %s", state)
 	bm.state = state
 }
 
-func (bm *benchmetrics) update() {
-	atomic.AddInt64(&bm.updates, 1)
+func (bm *benchmetrics) update(latency time.Duration) {
+	bm.Lock()
+	defer bm.Unlock()
+	bm.updates++
+	bm.updateLatencies += int64(latency)
 }
-func (bm *benchmetrics) insert() {
-	atomic.AddInt64(&bm.inserts, 1)
+func (bm *benchmetrics) insert(latency time.Duration) {
+	bm.Lock()
+	defer bm.Unlock()
+	bm.inserts++
+	bm.insertLatencies += int64(latency)
 }
 
-func (bm *benchmetrics) read() {
-	atomic.AddInt64(&bm.reads, 1)
+func (bm *benchmetrics) read(latency time.Duration) {
+	bm.Lock()
+	defer bm.Unlock()
+	bm.reads++
+	bm.readLatencies += int64(latency)
+}
+
+func (bm *benchmetrics) getResetRead() (float64, float64, float64) {
+	bm.Lock()
+	defer bm.Unlock()
+	v, lats := bm.reads, bm.readLatencies
+	bm.reads = 0
+	bm.readLatencies = 0
+	latMean := 0.0
+	if v > 0 {
+		latMean = time.Duration(lats).Seconds() / float64(v)
+	}
+	return float64(v), time.Duration(lats).Seconds(), latMean
+}
+func (bm *benchmetrics) getResetInsert() (float64, float64, float64) {
+	bm.Lock()
+	defer bm.Unlock()
+	v, lats := bm.inserts, bm.insertLatencies
+	bm.inserts = 0
+	bm.insertLatencies = 0
+	latMean := 0.0
+	if v > 0 {
+		latMean = time.Duration(lats).Seconds() / float64(v)
+	}
+	return float64(v), time.Duration(lats).Seconds(), latMean
+}
+func (bm *benchmetrics) getResetUpdate() (float64, float64, float64) {
+	bm.Lock()
+	defer bm.Unlock()
+	v, lats := bm.updates, bm.updateLatencies
+	bm.updates = 0
+	bm.updateLatencies = 0
+	latMean := 0.0
+	if v > 0 {
+		latMean = time.Duration(lats).Seconds() / float64(v)
+	}
+	return float64(v), time.Duration(lats).Seconds(), latMean
 }
 
 func (bm *benchmetrics) writeStats(ctx context.Context) {
@@ -419,7 +545,7 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 		out = outFile
 	}
 
-	fmt.Fprintf(out, "time,state,reads,updates,inserts,total,mem,disk,files\n")
+	fmt.Fprintf(out, "time,state,reads,updates,inserts,readLatMean,updateLatMean,insertLatMean,readOnlys,updateOnlys,writeOnlys,totalOps,mem,disk,files\n")
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -435,35 +561,49 @@ func (bm *benchmetrics) writeStats(ctx context.Context) {
 		}
 
 		now := time.Now()
-		reads := atomic.SwapInt64(&bm.reads, 0)
-		updates := atomic.SwapInt64(&bm.updates, 0)
-		inserts := atomic.SwapInt64(&bm.inserts, 0)
-
+		reads, readLatencies, readLatencyMean := bm.getResetRead()
+		updates, updateLatencies, updateLatencyMean := bm.getResetUpdate()
+		inserts, insertLatencies, insertLatencyMean := bm.getResetInsert()
 		secDiff := now.Sub(last).Seconds()
+		last = now
 
-		readsPerSecond := float64(reads) / secDiff
-		updatesPerSecond := float64(updates) / secDiff
-		insertsPerSecond := float64(inserts) / secDiff
-		opsPerSecond := float64(reads+updates+inserts) / secDiff
+		readsPerSecond := reads / secDiff
 
-		keyMapSize := int64(len(keys) * (*keyLength))
-		mem := bm.reg.Get("runtime.MemStats.HeapAlloc").(metrics.Gauge).Value() - keyMapSize
-		// memory calculation has not started yet
-		if mem < 0 {
-			mem = 0.0
+		readsOnlyPerSecond := 0.0
+		if readLatencies > 0 {
+			readsOnlyPerSecond = reads * (secDiff / readLatencies)
 		}
+		updatesPerSecond := updates / secDiff
+		updatesOnlyPerSecond := 0.0
+		if updateLatencies > 0 {
+			updatesOnlyPerSecond = updates * (secDiff / updateLatencies)
+		}
+		insertsPerSecond := inserts / secDiff
+		insertsOnlyPerSecond := 0.0
+		if insertLatencies > 0 {
+			insertsOnlyPerSecond = inserts * (secDiff / insertLatencies)
+		}
+		opsPerSecond := (reads + updates + inserts) / secDiff
 
-		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%.0f,%d,%d,%d\n",
+		bm.Lock()
+		fmt.Fprintf(out, "%04d,%s,%.0f,%.0f,%.0f,%f,%f,%f,%.0f,%.0f,%.0f,%.0f,%d,%d,%d\n",
 			int(time.Since(start).Seconds()),
 			bm.state,
 			readsPerSecond,
 			updatesPerSecond,
 			insertsPerSecond,
+			readLatencyMean,
+			updateLatencyMean,
+			insertLatencyMean,
+			readsOnlyPerSecond,
+			updatesOnlyPerSecond,
+			insertsOnlyPerSecond,
 			opsPerSecond,
-			mem,
+			bm.memory,
 			bm.diskusage,
 			bm.files,
 		)
+		bm.Unlock()
 
 	}
 }

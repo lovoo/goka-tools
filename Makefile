@@ -11,22 +11,18 @@ test:
 build-bench:
 	docker build -t stbench -f cmd/stbench/Dockerfile .
 
-run-leveldb:
+STORAGE ?=
+run-experiment:
 	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v `pwd`/stbench_eval_out:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:600 --device-read-iops=/dev/dm-0:600 --device-write-bps=/dev/dm-0:20mb \
 			--device-read-bps=/dev/dm-0:20mb \
 			stbench /stbench --keys=2000000 \
-			 --path /out/leveldb/ --storage=leveldb \
+			 --path /out/$(STORAGE)/ --storage=$(STORAGE) \
 			--clear \
-			--stats /out/leveldb/stats.csv
+			--stats /out/$(STORAGE)/stats.csv
 	
-run-pogrep:
-	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v /home/franz/docker:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:300 --device-read-iops=/dev/dm-0:300 --device-write-bps=/dev/dm-0:5mb \
-			--device-read-bps=/dev/dm-0:5mb \
-			stbench /stbench --keys=1000000 \
-			 --path /out/pogrep --storage=pogrep \
-			--duration=120 \
-			--stats /out/stats/pogrep-1m-stats-reuse
-	
+run-all:
+	STORAGE=leveldb $(MAKE) run-experiment
+	STORAGE=pogrep $(MAKE) run-experiment
 
 
 docker-stats:

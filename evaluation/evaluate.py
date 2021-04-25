@@ -1,0 +1,128 @@
+import argparse
+import pandas as pd
+import numpy as np
+from matplotlib import pyplot as plt
+import os.path
+
+
+colors = {'open':'blue',
+        'recover':'orange',
+        'reopen':'olive',
+        'running':'green',
+        'commit':'purple',
+        'close':'gray',
+        'prepare-run':'orange',
+        'iterate':'pink',
+        }
+
+
+def renderChart(evaluationFolder, experiment):
+  leveldb = pd.read_csv(os.path.join(evaluationFolder, experiment, 'stats.csv'))
+
+  states = {}
+
+  prevState = ""
+  for index, row in leveldb.iterrows():
+      state = row['state']
+      time = row['time']
+      if state not in states:
+          states[state] = []
+      
+      stateList = states[state]
+
+      
+      # state did not change, just change the end-time of the last item
+      if prevState == state:
+          stateList[-1][1] = time
+      else:
+          # state changed, create a new block
+          stateList.append([time, time])
+          
+      prevState = state
+      
+  fig, (ax, diskAx, stateAx) = plt.subplots(3, figsize=(10,12),  gridspec_kw={'height_ratios': [20,4,2]})
+  memAx = ax.twinx()
+
+  leveldb['mem_mb'] = leveldb['mem'] / (1024*1024)
+
+
+  stateList = [] 
+  colorList = [] 
+  stateLabelList = [] 
+
+  for state, stateSlots in states.items():
+      for s in stateSlots:
+          stateList.append([s[0], s[1]-s[0]])
+          colorList.append("tab:"+colors.get(state, 'red'))
+          stateLabelList.append(state)
+        
+      
+
+  ax.set_xlabel('time')
+  ax.set_ylabel('operations per second')
+  memAx.set_ylabel('used memory in MB')
+#   opsMax = leveldb['reads'].quantile(q=0.9)
+  leveldb.plot(x='time',
+   y=[
+    #    'reads', 'updates',  'inserts', 
+    'readLatMean', 'updateLatMean', 'insertLatMean',
+#    'readOnlys','updateOnlys','writeOnlys',
+   ], ax=ax, 
+  label=[
+#       "Reads per second",
+#    "Updates per second",
+#    "Inserts per second",
+'Read latency (mean)',
+'Update latency (mean)',
+'Insert latency (mean)',
+    # "Reads (if only) per second", 
+    #  "Updates (if only) per second",
+    #  "Inserts (if only) per second",
+     ])
+  leveldb.plot(x='time', y='mem_mb', color="purple", ax=memAx)
+  ax.legend(loc='upper left')
+#   ax.set_yscale('log')
+  memAx.legend(loc='upper right')
+
+  stateAx.set_ylim(0,16)
+  stateAx.set_xlabel('Evaluation Phase')
+  stateAx.set_yticks([7])
+  stateAx.tick_params('both', width=0,labelsize=0)
+  stateAx.broken_barh(stateList, [12,2], facecolors=colorList)
+
+  for pos in ['left', 'right', 'top', 'bottom']:
+      stateAx.spines[pos].set_visible(False)
+
+  fig.tight_layout()
+
+  for i, state  in enumerate(stateList):
+      stateAx.text(x=state[0] + state[1]/2.0, ha="center", y=1, rotation=45, s=stateLabelList[i])
+
+  fileAx = diskAx.twinx()
+
+
+  leveldb['disk_mb'] = leveldb['disk'] / (1024*1024)
+
+  leveldb.plot(x='time', y='files', ax=fileAx, color="green", label="files in folder")
+  leveldb.plot(x='time', y='disk_mb', ax=diskAx, color="red", label="disk usage")
+  fileAx.legend(loc='upper right')
+  fileAx.set_ylabel('files in folder')
+  diskAx.set_ylabel('disk usage in MB')
+  diskAx.legend(loc='upper left')
+  diskAx.set_xlabel("Disk & Files")
+
+  fig.savefig(experiment+'.png')
+
+def main(args):
+
+  for result in args.results:
+    renderChart(args.folder, result)
+
+
+if __name__=='__main__':
+  parser = argparse.ArgumentParser("generator")
+  parser.add_argument('--folder', dest='folder')
+  parser.add_argument('--results', dest="results", action="append")
+
+  args = parser.parse_args()
+  main(args)

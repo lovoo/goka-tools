@@ -3,13 +3,16 @@ package pg
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/akrylysov/pogreb"
 	"github.com/lovoo/goka/storage"
 )
 
 type sst struct {
-	db *pogreb.DB
+	db     *pogreb.DB
+	close  chan struct{}
+	closed chan struct{}
 }
 
 // Build builds an sqlite storage for goka
@@ -25,24 +28,20 @@ func Build(path string) (storage.Storage, error) {
 	}
 
 	return &sst{
-		db: db,
+		db:     db,
+		close:  make(chan struct{}),
+		closed: make(chan struct{}),
 	}, nil
 }
 
 func (s *sst) Open() error {
-
-	// go func() {
-	// 	for {
-	// 		time.Sleep(time.Second)
-	// 		m := s.db.Metrics()
-	// 		log.Printf("put %d, gets %d, dels %d, collisions  %d", m.Puts.Value(), m.Gets.Value(), m.Dels.Value(), m.HashCollisions.Value())
-	// 	}
-	// }()
-
-	return nil
+	_, err := s.db.Compact()
+	return err
 }
 
 func (s *sst) Close() error {
+	close(s.close)
+	defer close(s.closed)
 	return s.db.Close()
 }
 func (s *sst) Has(key string) (bool, error) {
@@ -70,6 +69,35 @@ func (s *sst) SetOffset(offset int64) error {
 }
 
 func (s *sst) MarkRecovered() error {
+	log.Printf("compacting initially")
+	_, err := s.db.Compact()
+	if err != nil {
+		return err
+	}
+	log.Printf("...done")
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.close:
+				return
+			case <-s.closed:
+				return
+			case <-ticker.C:
+				log.Printf("compacting")
+				if err := s.db.Sync(); err != nil {
+					log.Printf("error syncing: %v", err)
+				}
+				res, err := s.db.Compact()
+				if err != nil {
+					log.Printf("error compacting: %v", err)
+				}
+				log.Printf("...done: (segments %d, records %d)", res.CompactedSegments, res.ReclaimedRecords)
+				ticker.Reset(5 * time.Second)
+			}
+		}
+	}()
 	return nil
 }
 
