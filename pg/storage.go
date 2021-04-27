@@ -3,6 +3,7 @@ package pg
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/akrylysov/pogreb"
@@ -15,12 +16,16 @@ type sst struct {
 	closed chan struct{}
 }
 
+var (
+	offsetKey = "__offset"
+)
+
 // Build builds an sqlite storage for goka
 func Build(path string) (storage.Storage, error) {
 
 	db, err := pogreb.Open(path, &pogreb.Options{
-		// BackgroundSyncInterval:       10 * time.Second,
-		// BackgroundCompactionInterval: 15 * time.Second,
+		BackgroundSyncInterval:       1 * time.Second,
+		BackgroundCompactionInterval: 10 * time.Second,
 	})
 	if err != nil {
 		log.Fatalf("Error opening pogrep database: %v", err)
@@ -60,44 +65,33 @@ func (s *sst) Delete(key string) error {
 	return nil
 }
 
-func (s *sst) GetOffset(def int64) (int64, error) {
-	return 0, nil
+func (s *sst) GetOffset(defValue int64) (int64, error) {
+	data, err := s.Get(offsetKey)
+	if err != nil {
+		return 0, err
+	}
+
+	if data == nil {
+		return defValue, nil
+	}
+
+	value, err := strconv.ParseInt(string(data), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("error decoding offset: %v", err)
+	}
+
+	return value, nil
 }
 
 func (s *sst) SetOffset(offset int64) error {
-	return nil
-}
-
-func (s *sst) MarkRecovered() error {
-	log.Printf("compacting initially")
-	_, err := s.db.Compact()
+	err := s.db.Put([]byte(offsetKey), []byte(strconv.FormatInt(offset, 10)))
 	if err != nil {
 		return err
 	}
-	log.Printf("...done")
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-s.close:
-				return
-			case <-s.closed:
-				return
-			case <-ticker.C:
-				log.Printf("compacting")
-				if err := s.db.Sync(); err != nil {
-					log.Printf("error syncing: %v", err)
-				}
-				res, err := s.db.Compact()
-				if err != nil {
-					log.Printf("error compacting: %v", err)
-				}
-				log.Printf("...done: (segments %d, records %d)", res.CompactedSegments, res.ReclaimedRecords)
-				ticker.Reset(5 * time.Second)
-			}
-		}
-	}()
+	return s.db.Sync()
+}
+
+func (s *sst) MarkRecovered() error {
 	return nil
 }
 
