@@ -9,12 +9,17 @@ import math
 colors = {'open':'blue',
         'recover':'orange',
         'reopen':'olive',
+        'running-read':'green',
+        'running-insert':'green',
+        'running-update':'green',
+        'running-mixed':'green',
         'running':'green',
         'commit':'purple',
         'close':'gray',
-        'prepare-run':'orange',
         'iterate':'pink',
         }
+
+renderCol = collections.namedtuple('column', ['name', 'ylabel', 'title'], defaults=['', ''])
 
 def renderPhaseChart(data, phase, stats):
   phasedata = data.loc[data['state']==phase,:]
@@ -42,8 +47,6 @@ def renderPhaseChart(data, phase, stats):
   fig.tight_layout(pad=1.5)
   fig.savefig(phase+".png")
 
-renderCol = collections.namedtuple('column', ['name', 'ylabel', 'title'], defaults=['', ''])
-
 def renderComparisonChart(evaluationFolder, experiments):
 
   data = None
@@ -64,14 +67,18 @@ def renderComparisonChart(evaluationFolder, experiments):
     renderCol( 'inserts'),
     renderCol(  'writeOnlys'),
       ])
-  renderPhaseChart(data, 'running', [ 
-   renderCol( 'reads', title='Reads per second (higher is better)'), 
-   renderCol( 'inserts', title='Inserts per second (higher is better)'), 
-   renderCol( 'updates', title='Updates per second (higher is better)'),
-   renderCol( 'readLatMean', ylabel='ms', title='read latency (lower is better)'), 
-   renderCol( 'updateLatMean', ylabel='ms', title='update (write) latency (lower is better)'),
-   renderCol(  'insertLatMean', ylabel='ms', title='insert (new) latency (lower is better)'),
-     ])
+  for runPhase in ['running-read', 'running-update', 'running-insert', 'running-mixed']:
+    renderPhaseChart(data, runPhase, [ 
+    renderCol( 'reads', title='Reads per second (higher is better)'), 
+    renderCol( 'inserts', title='Inserts per second (higher is better)'), 
+    renderCol( 'updates', title='Updates per second (higher is better)'),
+    renderCol( 'readLatMean', ylabel='ms', title='read latency (lower is better)'), 
+    renderCol( 'updateLatMean', ylabel='ms', title='update (write) latency (lower is better)'),
+    renderCol(  'insertLatMean', ylabel='ms', title='insert (new) latency (lower is better)'),
+    renderCol( 'readOnlys', title='reads per second (higher is better)'), 
+    renderCol( 'updateOnlys', title='updates per second (higher is better)'),
+    renderCol(  'writeOnlys', title='inserts per second (higher is better)'),
+      ])
 
 
 def renderChart(evaluationFolder, experiment):

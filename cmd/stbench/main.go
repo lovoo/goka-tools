@@ -31,10 +31,7 @@ var (
 	topic          = pflag.String("topic", "topic", "topic to use. Probably no need to change it.")
 	partition      = pflag.Int("partition", 0, "partition to use. Probably no need to change it")
 	numKeys        = pflag.Int("keys", 5000000, "number of different keys to use")
-	updates        = pflag.Int("updates", 1, "proportion of the number of keys (from all keys), whose value will be updated.")
-	reads          = pflag.Int("reads", 10, "proportion of the number of keys (from all keys), that will be read.")
-	inserts        = pflag.Int("inserts", 1, "proportion of new keys that will be inserted after recovery.")
-	duration       = pflag.Int("duration", 60, "duration in seconds to run operations")
+	duration       = pflag.Int("duration", 30, "duration in seconds to run operations of different types")
 	iterateTimeout = pflag.Int("iterate-timeout", 10, "duration in seconds to run iteration, or 0 to iterate thorugh the whole storage")
 	enableIterate  = pflag.Bool("iterate", true, "iterate once through the whole storage.")
 	keyLength      = pflag.Int("key-len", 24, "length of the key in bytes. default is 24")
@@ -106,8 +103,18 @@ func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
 	switch *storageType {
 	case "leveldb":
 		st = createStorage()
-	case "pogrep":
-		st = createPogrepStorage()
+	case "pogrep-offsetsync":
+		options := pg.DefaultOptions()
+		options.Recovery.BatchedOffsetSync = 0
+		options.SyncAfterOffset = true
+		st = createPogrepStorage(options)
+	case "pogrep-batch-recover":
+		options := pg.DefaultOptions()
+
+		// completely turn off compaction/sync
+		options.CompactionInterval = 0
+		options.SyncInterval = 0
+		st = createPogrepStorage(options)
 	case "sqlite":
 		st = createSqliteStorage()
 	default:
@@ -198,17 +205,47 @@ func run(ctx context.Context, bm *benchmetrics) {
 		return st.Close()
 	})
 
-	bm.setState("prepare-run")
-	runnerOps := append(append(createOps(ctx, update, *updates),
-		createOps(ctx, read, *reads)...),
-		createOps(ctx, insert, *inserts)...,
-	)
-	rand.Shuffle(len(runnerOps), func(i, j int) {
-		runnerOps[i], runnerOps[j] = runnerOps[j], runnerOps[i]
+	bm.setState("running-read")
+	runForTime(ctx, func(idx int) {
+		s := time.Now()
+		readValue(st, keys[rand.Intn(len(keys))])
+		bm.read(time.Since(s))
 	})
 
-	bm.setState("running")
+	bm.setState("running-update")
+	runForTime(ctx, func(idx int) {
+		s := time.Now()
+		writeValue(st, keys[rand.Intn(len(keys))])
+		bm.update(time.Since(s))
+	})
 
+	bm.setState("running-insert")
+	runForTime(ctx, func(idx int) {
+		s := time.Now()
+		writeValue(st, makeKey())
+		bm.insert(time.Since(s))
+	})
+
+	bm.setState("running-mixed")
+	runForTime(ctx, func(idx int) {
+		op := idx % 3
+		s := time.Now()
+		switch op {
+		case 0:
+			s := time.Now()
+			readValue(st, keys[rand.Intn(len(keys))])
+			bm.read(time.Since(s))
+		case 1:
+			writeValue(st, keys[rand.Intn(len(keys))])
+			bm.update(time.Since(s))
+		case 2:
+			writeValue(st, makeKey())
+			bm.insert(time.Since(s))
+		}
+	})
+}
+
+func runForTime(ctx context.Context, do func(idx int)) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(*duration)*time.Second)
 	defer cancel()
 
@@ -220,29 +257,8 @@ func run(ctx context.Context, bm *benchmetrics) {
 			return
 		default:
 		}
+		do(idx)
 
-		op := runnerOps[idx%len(runnerOps)]
-		switch op {
-		case read:
-			key := keys[rand.Intn(len(keys))]
-			s := time.Now()
-			_, err := st.Get(key)
-			if err != nil {
-				log.Fatalf("Error reading key: %v", err)
-			}
-			bm.read(time.Since(s))
-		case update:
-			s := time.Now()
-			writeValue(st, makeKey())
-			bm.update(time.Since(s))
-		case insert:
-			key := keys[rand.Intn(len(keys))]
-			s := time.Now()
-			writeValue(st, key)
-			bm.insert(time.Since(s))
-		default:
-			panic("unsupported operation")
-		}
 		idx++
 	}
 }
@@ -322,11 +338,21 @@ func writeValue(st storage.Storage, key string) {
 	value := make([]byte, *valueLength)
 	rand.Read(value)
 
-	st.Set(key, value)
+	err := st.Set(key, value)
+	if err != nil {
+		panic(fmt.Errorf("error executing set: %v", err))
+	}
 }
 
-func createPogrepStorage() storage.Storage {
-	st, err := pg.Build(*path)
+func readValue(st storage.Storage, key string) {
+	_, err := st.Get(key)
+	if err != nil {
+		panic(fmt.Errorf("Error reading key: %v", err))
+	}
+}
+
+func createPogrepStorage(options *pg.Options) storage.Storage {
+	st, err := pg.Build(*path, options)
 	if err != nil {
 		log.Fatalf("error opening database %v", err)
 	}

@@ -13,8 +13,8 @@ build-bench:
 
 STORAGE ?=
 run-experiment:
-	docker run --rm -it --user $(DOCKER_USERGROUP) --name stbench -v `pwd`/stbench_eval_out:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:600 --device-read-iops=/dev/dm-0:600 --device-write-bps=/dev/dm-0:20mb \
-			--device-read-bps=/dev/dm-0:20mb \
+	docker run --rm -it --user $(DOCKER_USERGROUP) -v `pwd`/stbench_eval_out:/out/ --cpus=1 --memory=500m --device-write-iops=/dev/dm-0:300 --device-read-iops=/dev/dm-0:300 --device-write-bps=/dev/dm-0:5mb \
+			--device-read-bps=/dev/dm-0:5mb \
 			stbench /stbench --keys=2000000 \
 			 --path /out/$(STORAGE)/ --storage=$(STORAGE) \
 			--clear \
@@ -22,7 +22,8 @@ run-experiment:
 	
 run-all:
 	STORAGE=leveldb $(MAKE) run-experiment
-	STORAGE=pogrep $(MAKE) run-experiment
+	STORAGE=pogrep-offsetsync $(MAKE) run-experiment
+	STORAGE=pogrep-batch-recover $(MAKE) run-experiment
 
 
 docker-stats:
