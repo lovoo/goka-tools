@@ -23,7 +23,7 @@ func (t *Topic) renderNode() string {
 	if t.IsTable {
 		color = "pink"
 	}
-	return fmt.Sprintf(`%s [shape="Mrecord" label="%s" style="filled" fillcolor="%s"];`, t.ID, t.Name, color)
+	return fmt.Sprintf(`"%s" [shape="Mrecord" label="%s" style="filled" fillcolor="%s"];`, t.ID, t.Name, color)
 }
 
 // Processor represents a goka processor
@@ -39,30 +39,30 @@ type Processor struct {
 }
 
 func (p *Processor) renderNode() string {
-	return fmt.Sprintf(`%s [shape="box" label="%s" style="filled" fillcolor="lightcyan"];`, p.ID, p.Name)
+	return fmt.Sprintf(`"%s" [shape="box" label="%s" style="filled" fillcolor="lightcyan"];`, p.ID, p.Name)
 }
 func (p *Processor) renderEdges() []string {
 	var edges []string
 
 	for _, output := range p.Output {
-		edges = append(edges, fmt.Sprintf(`%s -> %s [fontsize=10];`, p.ID, output.ID))
+		edges = append(edges, fmt.Sprintf(`"%s" -> "%s" [fontsize=10];`, p.ID, output.ID))
 	}
 	for _, input := range p.Input {
-		edges = append(edges, fmt.Sprintf(`%s -> %s [fontsize=10];`, input.ID, p.ID))
+		edges = append(edges, fmt.Sprintf(`"%s" -> "%s" [fontsize=10];`, input.ID, p.ID))
 	}
 	for _, join := range p.Join {
-		edges = append(edges, fmt.Sprintf(`%s -> %s [label="join" fontsize=10];`, join.ID, p.ID))
+		edges = append(edges, fmt.Sprintf(`"%s" -> "%s" [label="join" fontsize=10];`, join.ID, p.ID))
 	}
 	for _, lookup := range p.Lookup {
-		edges = append(edges, fmt.Sprintf(`%s -> %s [label="lookup" fontsize=10];`, lookup.ID, p.ID))
+		edges = append(edges, fmt.Sprintf(`"%s" -> "%s" [label="lookup" fontsize=10];`, lookup.ID, p.ID))
 	}
 
 	if p.LoopCodec != "" {
-		edges = append(edges, fmt.Sprintf(`%s -> %s [label="loop" fontsize=10 constraint=false];`, p.ID, p.ID))
+		edges = append(edges, fmt.Sprintf(`"%s" -> "%s" [label="loop" fontsize=10 constraint=false];`, p.ID, p.ID))
 	}
 
 	if p.Persist != nil {
-		edges = append(edges, fmt.Sprintf(`%s -> %s [label="persist" fontsize=10 constraint=false];`, p.ID, p.Persist.ID))
+		edges = append(edges, fmt.Sprintf(`"%s" -> "%s" [label="persist" fontsize=10 constraint=false];`, p.ID, p.Persist.ID))
 	}
 
 	return edges
@@ -105,7 +105,7 @@ func (t *Tree) Render() {
 	for id := range t.Processors {
 		procIds = append(procIds, id)
 	}
-	t.renderLine(fmt.Sprintf("{rank=same; %s;}", strings.Join(procIds, " ")))
+	t.renderLine(fmt.Sprintf(`{rank=same; "%s";}`, strings.Join(procIds, `" "`)))
 
 	var (
 		streamTopics []string
@@ -119,10 +119,10 @@ func (t *Tree) Render() {
 		}
 	}
 	if len(streamTopics) > 0 {
-		t.renderLine(fmt.Sprintf("{rank=source; %s;}", strings.Join(streamTopics, " ")))
+		t.renderLine(fmt.Sprintf(`{rank=source; "%s";}`, strings.Join(streamTopics, `" "`)))
 	}
 	if len(tableTopics) > 0 {
-		t.renderLine(fmt.Sprintf("{rank=sink; %s;}", strings.Join(tableTopics, " ")))
+		t.renderLine(fmt.Sprintf(`{rank=sink; "%s";}`, strings.Join(tableTopics, `" "`)))
 	}
 
 	for _, proc := range t.Processors {
@@ -141,7 +141,7 @@ func (t *Tree) TrackGroupGraph(gg *goka.GroupGraph) {
 	name := string(gg.Group())
 	id := makeID(name)
 	if _, exists := t.Processors[id]; exists {
-		log.Fatalf("duplicate processor %s", gg.Group())
+		log.Fatalf(`duplicate processor "%s"`, gg.Group())
 	}
 
 	proc := &Processor{
