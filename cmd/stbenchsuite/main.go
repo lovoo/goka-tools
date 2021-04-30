@@ -119,7 +119,7 @@ func generateExperiments(ctx context.Context, exps chan *experiment) error {
 		[]int{500},
 		[]int{10},
 	)
-	generateExpForStorage(ctx, exps, "pogrep",
+	generateExpForStorage(ctx, exps, "pogreb",
 		[]int{10000,
 			50000,
 			100000,

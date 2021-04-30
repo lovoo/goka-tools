@@ -352,8 +352,8 @@ func readValue(st storage.Storage, key string) {
 }
 
 func createpogrebStorage(options *pg.Options) storage.Storage {
-	sg := pg.NewStorageGroup(1)
-	st, err := sg.Build(*path, options)
+	sg := pg.NewStorageGroup(options, 1)
+	st, err := sg.Build(*path)
 	if err != nil {
 		log.Fatalf("error opening database %v", err)
 	}

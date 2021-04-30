@@ -16,7 +16,8 @@ import (
 type semaphore chan struct{}
 
 type StorageGroup struct {
-	sema semaphore
+	sema    semaphore
+	options *Options
 }
 
 // Acquire acquires resources
@@ -29,14 +30,14 @@ func (s semaphore) Release() {
 	<-s
 }
 
-func NewStorageGroup(parallel int) *StorageGroup {
+func NewStorageGroup(options *Options, parallel int) *StorageGroup {
 	return &StorageGroup{
 		sema: make(semaphore, parallel),
 	}
 }
 
-func (sg *StorageGroup) Build(path string, options *Options) (storage.Storage, error) {
-	return Build(path, options, sg.sema)
+func (sg *StorageGroup) Build(path string) (storage.Storage, error) {
+	return Build(path, sg.options, sg.sema)
 }
 
 type sst struct {
