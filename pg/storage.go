@@ -147,7 +147,9 @@ func (s *sst) compactLoop() {
 			select {
 			case <-s.recovered:
 			default:
-				break
+				if s.opts.NoCompaction {
+					break
+				}
 			}
 
 			s.sema.Acquire()
@@ -186,6 +188,7 @@ func (s *sst) compactLoop() {
 func (s *sst) Close() error {
 	close(s.close)
 	defer close(s.closed)
+	s.closeWg.Wait()
 	return s.db.Close()
 }
 func (s *sst) Has(key string) (bool, error) {
