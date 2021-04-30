@@ -162,7 +162,7 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			compactTicker.Reset(compactInterval + s.jitteredDuration())
+			compactTicker.Reset(compactInterval + s.jitteredDuration(compactInterval))
 		case <-syncTicker.C:
 			// skip compaction if we're not recovered yet,
 			// this will be done in the recovery-sync-worker
@@ -181,13 +181,13 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			syncTicker.Reset(syncInterval + s.jitteredDuration())
+			syncTicker.Reset(syncInterval + s.jitteredDuration(compactInterval))
 		}
 	}
 }
 
 func (s *sst) jitteredDuration(duration time.Duration) time.Duration {
-	return duration * time.Duration(s.opts.JitterMaxFraction*(rand.Float64()*2.0-1.0))
+	return time.Duration(float64(duration) * (s.opts.JitterMaxFraction * (rand.Float64()*2.0 - 1.0)))
 }
 
 func (s *sst) Close() error {
