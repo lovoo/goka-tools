@@ -3,6 +3,7 @@ package pg
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -147,7 +148,7 @@ func (s *sst) compactLoop() {
 			select {
 			case <-s.recovered:
 			default:
-				if s.opts.NoCompaction {
+				if s.opts.Recovery.NoCompaction {
 					break
 				}
 			}
@@ -161,7 +162,7 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			compactTicker.Reset(compactInterval)
+			compactTicker.Reset(compactInterval + s.jitteredDuration())
 		case <-syncTicker.C:
 			// skip compaction if we're not recovered yet,
 			// this will be done in the recovery-sync-worker
@@ -180,9 +181,13 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			syncTicker.Reset(syncInterval)
+			syncTicker.Reset(syncInterval + s.jitteredDuration())
 		}
 	}
+}
+
+func (s *sst) jitteredDuration() time.Duration {
+	return time.Duration(float64(s.opts.JitterMax) * (rand.NormFloat64()*2.0 - 1.0))
 }
 
 func (s *sst) Close() error {
