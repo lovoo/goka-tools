@@ -107,18 +107,31 @@ func (s *sst) Open() error {
 		}
 	}()
 
+	go s.compactLoop()
+
 	return nil
 }
+
+// never interval == 100 years, so basically never
+const never = time.Hour * 24 * 365 * 100
 
 func (s *sst) compactLoop() {
 	s.closeWg.Add(1)
 	defer s.closeWg.Done()
 
-	if s.opts.CompactionInterval == 0 {
-		return
+	compactInterval := s.opts.CompactionInterval
+	syncInterval := s.opts.SyncInterval
+
+	if compactInterval <= 0 {
+		compactInterval = never
+	}
+
+	if syncInterval <= 0 {
+		syncInterval = never
 	}
 
 	compactTicker := time.NewTicker(s.opts.CompactionInterval)
+	syncTicker := time.NewTicker(s.opts.SyncInterval)
 	for {
 		select {
 		case <-s.close:
@@ -139,7 +152,23 @@ func (s *sst) compactLoop() {
 			}
 			s.sema.Release()
 			// reset the timer
-			compactTicker.Reset(s.opts.CompactionInterval)
+			compactTicker.Reset(compactInterval)
+		case <-syncTicker.C:
+			// skip compaction if we're not recovered yet,
+			// this will be done in the recovery-sync-worker
+			select {
+			case <-s.recovered:
+			default:
+				break
+			}
+
+			s.sema.Acquire()
+			if err := s.db.Sync(); err != nil {
+				logger.Default().Printf("error syncing: %v", err)
+			}
+			s.sema.Release()
+			// reset the timer
+			syncTicker.Reset(syncInterval)
 		}
 	}
 }
