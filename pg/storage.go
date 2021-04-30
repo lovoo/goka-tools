@@ -134,8 +134,8 @@ func (s *sst) compactLoop() {
 		syncInterval = never
 	}
 
-	compactTicker := time.NewTicker(s.opts.CompactionInterval)
-	syncTicker := time.NewTicker(s.opts.SyncInterval)
+	compactTicker := time.NewTicker(compactInterval)
+	syncTicker := time.NewTicker(syncInterval)
 	for {
 		select {
 		case <-s.close:
