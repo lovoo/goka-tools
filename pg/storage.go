@@ -137,6 +137,9 @@ func (s *sst) compactLoop() {
 
 	compactTicker := time.NewTicker(compactInterval)
 	syncTicker := time.NewTicker(syncInterval)
+	defer syncTicker.Stop()
+	defer compactTicker.Stop()
+
 	for {
 		select {
 		case <-s.close:
@@ -181,7 +184,7 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			syncTicker.Reset(syncInterval + s.jitteredDuration(compactInterval))
+			syncTicker.Reset(syncInterval + s.jitteredDuration(syncInterval))
 		}
 	}
 }
