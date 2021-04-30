@@ -93,7 +93,7 @@ func (s *sst) Open() error {
 
 	go func() {
 		if s.opts.Recovery.BatchedOffsetSync == 0 {
-			return nil
+			return
 		}
 
 		syncTicker := time.NewTicker(s.opts.Recovery.BatchedOffsetSync)
