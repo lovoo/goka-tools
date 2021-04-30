@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/akrylysov/pogreb"
+	"github.com/lovoo/goka/logger"
 	"github.com/lovoo/goka/storage"
 )
 
@@ -16,7 +17,7 @@ type semaphore chan struct{}
 
 type StorageGroup struct {
 	sema    semaphore
-	logger  *log.Logger
+	logger  logger.Logger
 	options *Options
 }
 
@@ -30,7 +31,7 @@ func (s semaphore) Release() {
 	<-s
 }
 
-func NewStorageGroup(options *Options, parallel int, logger *log.Logger) *StorageGroup {
+func NewStorageGroup(options *Options, parallel int, logger logger.Logger) *StorageGroup {
 	return &StorageGroup{
 		sema:   make(semaphore, parallel),
 		logger: logger,
@@ -42,7 +43,7 @@ func (sg *StorageGroup) Build(path string) (storage.Storage, error) {
 }
 
 type sst struct {
-	logger    *log.Logger
+	logger    logger.Logger
 	path      string
 	sema      semaphore
 	offset    int64
@@ -59,7 +60,7 @@ var (
 )
 
 // Build builds an sqlite storage for goka
-func Build(path string, options *Options, sema semaphore, logger *log.Logger) (storage.Storage, error) {
+func Build(path string, options *Options, sema semaphore, logger logger.Logger) (storage.Storage, error) {
 
 	if options == nil {
 		options = DefaultOptions()
