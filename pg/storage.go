@@ -41,6 +41,7 @@ func (sg *StorageGroup) Build(path string) (storage.Storage, error) {
 }
 
 type sst struct {
+	path      string
 	sema      semaphore
 	offset    int64
 	recovered chan struct{}
@@ -75,6 +76,7 @@ func Build(path string, options *Options, sema semaphore) (storage.Storage, erro
 	}
 
 	return &sst{
+		path:      path,
 		sema:      sema,
 		recovered: make(chan struct{}),
 		opts:      options,
@@ -147,9 +149,12 @@ func (s *sst) compactLoop() {
 			}
 
 			s.sema.Acquire()
+			start := time.Now()
+			logger.Default().Printf("start compacting %s", s.path)
 			if _, err := s.db.Compact(); err != nil {
 				logger.Default().Printf("error compacting: %v", err)
 			}
+			logger.Default().Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
 			compactTicker.Reset(compactInterval)
@@ -163,9 +168,12 @@ func (s *sst) compactLoop() {
 			}
 
 			s.sema.Acquire()
+			start := time.Now()
+			logger.Default().Printf("start syncing %s", s.path)
 			if err := s.db.Sync(); err != nil {
 				logger.Default().Printf("error syncing: %v", err)
 			}
+			logger.Default().Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
 			syncTicker.Reset(syncInterval)
