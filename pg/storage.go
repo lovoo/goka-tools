@@ -69,7 +69,6 @@ func Build(path string, options *Options, sema semaphore, logger logger.Logger) 
 	sema.Acquire()
 	defer sema.Release()
 	db, err := pogreb.Open(path, &pogreb.Options{
-
 		BackgroundSyncInterval:       0, // we'll do sync/compact on our own
 		BackgroundCompactionInterval: 0, // we'll do sync/compact on our own
 	})
@@ -92,11 +91,10 @@ func Build(path string, options *Options, sema semaphore, logger logger.Logger) 
 
 func (s *sst) Open() error {
 
-	if s.opts.Recovery.BatchedOffsetSync > 0 {
-		return nil
-	}
-
 	go func() {
+		if s.opts.Recovery.BatchedOffsetSync == 0 {
+			return nil
+		}
 
 		syncTicker := time.NewTicker(s.opts.Recovery.BatchedOffsetSync)
 		defer syncTicker.Stop()
