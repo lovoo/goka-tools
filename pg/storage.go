@@ -66,8 +66,8 @@ func Build(path string, options *Options, sema semaphore) (storage.Storage, erro
 	defer sema.Release()
 	db, err := pogreb.Open(path, &pogreb.Options{
 
-		BackgroundSyncInterval:       options.SyncInterval,
-		BackgroundCompactionInterval: options.CompactionInterval,
+		BackgroundSyncInterval:       0, // we'll do sync/compact on our own
+		BackgroundCompactionInterval: 0, // we'll do sync/compact on our own
 	})
 	if err != nil {
 		log.Fatalf("Error opening pogreb database: %v", err)
