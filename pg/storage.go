@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/akrylysov/pogreb"
-	"github.com/lovoo/goka/logger"
 	"github.com/lovoo/goka/storage"
 )
 
@@ -17,6 +16,7 @@ type semaphore chan struct{}
 
 type StorageGroup struct {
 	sema    semaphore
+	logger  *log.Logger
 	options *Options
 }
 
@@ -30,17 +30,19 @@ func (s semaphore) Release() {
 	<-s
 }
 
-func NewStorageGroup(options *Options, parallel int) *StorageGroup {
+func NewStorageGroup(options *Options, parallel int, logger *log.Logger) *StorageGroup {
 	return &StorageGroup{
-		sema: make(semaphore, parallel),
+		sema:   make(semaphore, parallel),
+		logger: logger,
 	}
 }
 
 func (sg *StorageGroup) Build(path string) (storage.Storage, error) {
-	return Build(path, sg.options, sg.sema)
+	return Build(path, sg.options, sg.sema, sg.logger)
 }
 
 type sst struct {
+	logger    *log.Logger
 	path      string
 	sema      semaphore
 	offset    int64
@@ -57,7 +59,7 @@ var (
 )
 
 // Build builds an sqlite storage for goka
-func Build(path string, options *Options, sema semaphore) (storage.Storage, error) {
+func Build(path string, options *Options, sema semaphore, logger *log.Logger) (storage.Storage, error) {
 
 	if options == nil {
 		options = DefaultOptions()
@@ -76,6 +78,7 @@ func Build(path string, options *Options, sema semaphore) (storage.Storage, erro
 	}
 
 	return &sst{
+		logger:    logger,
 		path:      path,
 		sema:      sema,
 		recovered: make(chan struct{}),
@@ -150,11 +153,11 @@ func (s *sst) compactLoop() {
 
 			s.sema.Acquire()
 			start := time.Now()
-			logger.Default().Printf("start compacting %s", s.path)
+			s.logger.Printf("start compacting %s", s.path)
 			if _, err := s.db.Compact(); err != nil {
-				logger.Default().Printf("error compacting: %v", err)
+				s.logger.Printf("error compacting: %v", err)
 			}
-			logger.Default().Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
+			s.logger.Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
 			compactTicker.Reset(compactInterval)
@@ -169,11 +172,11 @@ func (s *sst) compactLoop() {
 
 			s.sema.Acquire()
 			start := time.Now()
-			logger.Default().Printf("start syncing %s", s.path)
+			s.logger.Printf("start syncing %s", s.path)
 			if err := s.db.Sync(); err != nil {
-				logger.Default().Printf("error syncing: %v", err)
+				s.logger.Printf("error syncing: %v", err)
 			}
-			logger.Default().Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
+			s.logger.Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
 			syncTicker.Reset(syncInterval)
