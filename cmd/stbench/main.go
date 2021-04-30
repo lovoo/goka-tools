@@ -103,18 +103,18 @@ func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
 	switch *storageType {
 	case "leveldb":
 		st = createStorage()
-	case "pogrep-offsetsync":
+	case "pogreb-offsetsync":
 		options := pg.DefaultOptions()
 		options.Recovery.BatchedOffsetSync = 0
 		options.SyncAfterOffset = true
-		st = createPogrepStorage(options)
-	case "pogrep-batch-recover":
+		st = createpogrebStorage(options)
+	case "pogreb-batch-recover":
 		options := pg.DefaultOptions()
 
 		// completely turn off compaction/sync
 		options.CompactionInterval = 0
 		options.SyncInterval = 0
-		st = createPogrepStorage(options)
+		st = createpogrebStorage(options)
 	case "sqlite":
 		st = createSqliteStorage()
 	default:
@@ -351,8 +351,9 @@ func readValue(st storage.Storage, key string) {
 	}
 }
 
-func createPogrepStorage(options *pg.Options) storage.Storage {
-	st, err := pg.Build(*path, options)
+func createpogrebStorage(options *pg.Options) storage.Storage {
+	sg := pg.NewStorageGroup(1)
+	st, err := sg.Build(*path, options)
 	if err != nil {
 		log.Fatalf("error opening database %v", err)
 	}

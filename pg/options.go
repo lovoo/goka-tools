@@ -16,8 +16,8 @@ type Options struct {
 
 func DefaultOptions() *Options {
 	return &Options{
-		CompactionInterval: 10 * time.Second,
-		SyncInterval:       1 * time.Second,
+		CompactionInterval: 60 * time.Second,
+		SyncInterval:       0,
 		Recovery: struct{ BatchedOffsetSync time.Duration }{
 			BatchedOffsetSync: 10 * time.Second,
 		},

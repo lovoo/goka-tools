@@ -1,25 +1,53 @@
 package pg
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/akrylysov/pogreb"
+	"github.com/lovoo/goka/logger"
 	"github.com/lovoo/goka/storage"
 )
 
+type semaphore chan struct{}
+
+type StorageGroup struct {
+	sema semaphore
+}
+
+// Acquire acquires resources
+func (s semaphore) Acquire() {
+	s <- struct{}{}
+}
+
+// Release releases resources
+func (s semaphore) Release() {
+	<-s
+}
+
+func NewStorageGroup(parallel int) *StorageGroup {
+	return &StorageGroup{
+		sema: make(semaphore, parallel),
+	}
+}
+
+func (sg *StorageGroup) Build(path string, options *Options) (storage.Storage, error) {
+	return Build(path, options, sg.sema)
+}
+
 type sst struct {
-	offset              int64
-	recovered           chan struct{}
-	opts                *Options
-	db                  *pogreb.DB
-	close               chan struct{}
-	closed              chan struct{}
-	cancelRecoverSyncer context.CancelFunc
+	sema      semaphore
+	offset    int64
+	recovered chan struct{}
+	opts      *Options
+	db        *pogreb.DB
+	close     chan struct{}
+	closeWg   sync.WaitGroup
+	closed    chan struct{}
 }
 
 var (
@@ -27,21 +55,26 @@ var (
 )
 
 // Build builds an sqlite storage for goka
-func Build(path string, options *Options) (storage.Storage, error) {
+func Build(path string, options *Options, sema semaphore) (storage.Storage, error) {
+
 	if options == nil {
 		options = DefaultOptions()
 	}
+
+	sema.Acquire()
+	defer sema.Release()
 	db, err := pogreb.Open(path, &pogreb.Options{
 
 		BackgroundSyncInterval:       options.SyncInterval,
 		BackgroundCompactionInterval: options.CompactionInterval,
 	})
 	if err != nil {
-		log.Fatalf("Error opening pogrep database: %v", err)
+		log.Fatalf("Error opening pogreb database: %v", err)
 		return nil, nil
 	}
 
 	return &sst{
+		sema:      sema,
 		recovered: make(chan struct{}),
 		opts:      options,
 		db:        db,
@@ -51,22 +84,23 @@ func Build(path string, options *Options) (storage.Storage, error) {
 }
 
 func (s *sst) Open() error {
-	var ctx context.Context
-	ctx, s.cancelRecoverSyncer = context.WithCancel(context.Background())
+
+	if s.opts.Recovery.BatchedOffsetSync > 0 {
+		return nil
+	}
 
 	go func() {
-		defer s.cancelRecoverSyncer()
 
-		syncChan, stopper := newNullableTicker(s.opts.Recovery.BatchedOffsetSync)
-		defer stopper()
+		syncTicker := time.NewTicker(s.opts.Recovery.BatchedOffsetSync)
+		defer syncTicker.Stop()
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-s.close:
 				return
 			case <-s.recovered:
 				return
-			case <-syncChan:
+			case <-syncTicker.C:
 				s.putOffset(atomic.LoadInt64(&s.offset), true)
 			}
 		}
@@ -75,12 +109,38 @@ func (s *sst) Open() error {
 	return nil
 }
 
-func newNullableTicker(d time.Duration) (<-chan time.Time, func()) {
-	if d > 0 {
-		t := time.NewTicker(d)
-		return t.C, t.Stop
+func (s *sst) compactLoop() {
+	s.closeWg.Add(1)
+	defer s.closeWg.Done()
+
+	if s.opts.CompactionInterval == 0 {
+		return
 	}
-	return nil, func() {}
+
+	compactTicker := time.NewTicker(s.opts.CompactionInterval)
+	for {
+		select {
+		case <-s.close:
+			return
+
+		case <-compactTicker.C:
+
+			// skip compaction if we're not recovered yet
+			select {
+			case <-s.recovered:
+			default:
+				break
+			}
+
+			s.sema.Acquire()
+			if _, err := s.db.Compact(); err != nil {
+				logger.Default().Printf("error compacting: %v", err)
+			}
+			s.sema.Release()
+			// reset the timer
+			compactTicker.Reset(s.opts.CompactionInterval)
+		}
+	}
 }
 
 func (s *sst) Close() error {
