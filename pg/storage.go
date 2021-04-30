@@ -186,8 +186,8 @@ func (s *sst) compactLoop() {
 	}
 }
 
-func (s *sst) jitteredDuration() time.Duration {
-	return time.Duration(float64(s.opts.JitterMax) * (rand.NormFloat64()*2.0 - 1.0))
+func (s *sst) jitteredDuration(duration time.Duration) time.Duration {
+	return duration * time.Duration(s.opts.JitterMaxFraction*(rand.Float64()*2.0-1.0))
 }
 
 func (s *sst) Close() error {
