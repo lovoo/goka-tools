@@ -22,7 +22,7 @@ type Options struct {
 func DefaultOptions() *Options {
 	return &Options{
 		CompactionInterval: 60 * time.Second,
-		SyncInterval:       0,
+		SyncInterval:       30 * time.Second,
 		JitterMaxFraction:  0.1,
 		Recovery: struct {
 			BatchedOffsetSync time.Duration
