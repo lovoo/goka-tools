@@ -34,8 +34,9 @@ func (s semaphore) Release() {
 
 func NewStorageGroup(options *Options, parallel int, logger logger.Logger) *StorageGroup {
 	return &StorageGroup{
-		sema:   make(semaphore, parallel),
-		logger: logger,
+		sema:    make(semaphore, parallel),
+		logger:  logger,
+		options: options,
 	}
 }
 
