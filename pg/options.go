@@ -12,10 +12,8 @@ type Options struct {
 	SyncAfterOffset bool
 
 	Recovery struct {
-		BatchedOffsetSync time.Duration
-
-		// if true, will skip compaction during recovery
-		NoCompaction bool
+		BatchedOffsetSync  time.Duration
+		CompactionInterval time.Duration
 	}
 }
 
@@ -25,10 +23,11 @@ func DefaultOptions() *Options {
 		SyncInterval:       30 * time.Second,
 		JitterMaxFraction:  0.1,
 		Recovery: struct {
-			BatchedOffsetSync time.Duration
-			NoCompaction      bool
+			BatchedOffsetSync  time.Duration
+			CompactionInterval time.Duration
 		}{
-			BatchedOffsetSync: 10 * time.Second,
+			BatchedOffsetSync:  120 * time.Second,
+			CompactionInterval: 180 * time.Second,
 		},
 	}
 }

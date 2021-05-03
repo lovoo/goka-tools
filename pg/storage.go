@@ -91,15 +91,25 @@ func Build(path string, options *Options, sema semaphore, logger logger.Logger) 
 	}, nil
 }
 
+func newTickerOrNever(duration time.Duration) (<-chan time.Time, func(), func(d time.Duration)) {
+	if duration <= 0 {
+		return nil, func() {}, func(_ time.Duration) {}
+	}
+
+	ticker := time.NewTicker(duration)
+	return ticker.C, ticker.Stop, ticker.Reset
+}
+
 func (s *sst) Open() error {
 
 	go func() {
-		if s.opts.Recovery.BatchedOffsetSync == 0 {
-			return
-		}
+		s.closeWg.Add(1)
+		defer s.closeWg.Done()
 
-		syncTicker := time.NewTicker(s.opts.Recovery.BatchedOffsetSync)
-		defer syncTicker.Stop()
+		compactC, compactStop, compactReset := newTickerOrNever(s.opts.Recovery.CompactionInterval)
+		defer compactStop()
+		syncC, syncStop, syncReset := newTickerOrNever(s.opts.Recovery.BatchedOffsetSync)
+		defer syncStop()
 
 		for {
 			select {
@@ -107,8 +117,15 @@ func (s *sst) Open() error {
 				return
 			case <-s.recovered:
 				return
-			case <-syncTicker.C:
+			case <-compactC:
+				s.doCompact()
+				// reset the timer
+				compactReset(s.opts.Recovery.CompactionInterval + s.jitteredDuration(s.opts.Recovery.CompactionInterval))
+			case <-syncC:
+
 				s.putOffset(atomic.LoadInt64(&s.offset), true)
+				// reset the timer
+				syncReset(s.opts.Recovery.BatchedOffsetSync + s.jitteredDuration(s.opts.Recovery.BatchedOffsetSync))
 			}
 		}
 	}()
@@ -118,43 +135,38 @@ func (s *sst) Open() error {
 	return nil
 }
 
-// never interval == 100 years, so basically never
-const never = time.Hour * 24 * 365 * 100
+func (s *sst) doCompact() {
+	s.sema.Acquire()
+	start := time.Now()
+	s.logger.Printf("start compacting %s", s.path)
+	if _, err := s.db.Compact(); err != nil {
+		s.logger.Printf("error compacting: %v", err)
+	}
+	s.logger.Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
+	s.sema.Release()
+}
 
 func (s *sst) compactLoop() {
 	s.closeWg.Add(1)
 	defer s.closeWg.Done()
 
-	compactInterval := s.opts.CompactionInterval
-	syncInterval := s.opts.SyncInterval
-
-	if compactInterval <= 0 {
-		compactInterval = never
-	}
-
-	if syncInterval <= 0 {
-		syncInterval = never
-	}
-
-	compactTicker := time.NewTicker(compactInterval)
-	syncTicker := time.NewTicker(syncInterval)
-	defer syncTicker.Stop()
-	defer compactTicker.Stop()
+	compactC, compactStop, compactReset := newTickerOrNever(s.opts.CompactionInterval)
+	defer compactStop()
+	syncC, syncStop, syncReset := newTickerOrNever(s.opts.SyncInterval)
+	defer syncStop()
 
 	for {
 		select {
 		case <-s.close:
 			return
 
-		case <-compactTicker.C:
+		case <-compactC:
 
 			// skip compaction if we're not recovered yet
 			select {
 			case <-s.recovered:
 			default:
-				if s.opts.Recovery.NoCompaction {
-					break
-				}
+				break
 			}
 
 			s.sema.Acquire()
@@ -166,10 +178,9 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			compactTicker.Reset(compactInterval + s.jitteredDuration(compactInterval))
-		case <-syncTicker.C:
-			// skip compaction if we're not recovered yet,
-			// this will be done in the recovery-sync-worker
+			compactReset(s.opts.CompactionInterval + s.jitteredDuration(s.opts.CompactionInterval))
+		case <-syncC:
+			// skip compaction if we're not recovered yet
 			select {
 			case <-s.recovered:
 			default:
@@ -185,7 +196,7 @@ func (s *sst) compactLoop() {
 			s.logger.Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
-			syncTicker.Reset(syncInterval + s.jitteredDuration(syncInterval))
+			syncReset(s.opts.SyncInterval + s.jitteredDuration(s.opts.SyncInterval))
 		}
 	}
 }
@@ -217,6 +228,21 @@ func (s *sst) Delete(key string) error {
 }
 
 func (s *sst) GetOffset(defValue int64) (int64, error) {
+
+	// if we're recovered, read offset from the storage, otherwise
+	// read our local copy, as it is probably newer
+	select {
+	case <-s.recovered:
+	default:
+
+		localOffset := atomic.LoadInt64(&s.offset)
+		// if it's 0, it's either really 0 or just has never been loaded from storage,
+		// so only return if != 0
+		if localOffset != 0 {
+			return localOffset, nil
+		}
+	}
+
 	data, err := s.Get(offsetKey)
 	if err != nil {
 		return 0, err
@@ -261,6 +287,10 @@ func (s *sst) SetOffset(offset int64) error {
 }
 
 func (s *sst) MarkRecovered() error {
+	err := s.putOffset(atomic.LoadInt64(&s.offset), true)
+	if err != nil {
+		return err
+	}
 	close(s.recovered)
 	return nil
 }
