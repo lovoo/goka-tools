@@ -18,8 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lovoo/goka-tools/ldbstorage"
 	"github.com/lovoo/goka-tools/pg"
 	"github.com/lovoo/goka-tools/sqlstorage"
+	"github.com/lovoo/goka/logger"
 	"github.com/lovoo/goka/storage"
 	"github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -103,6 +105,8 @@ func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
 	switch *storageType {
 	case "leveldb":
 		st = createStorage()
+	case "leveldb2":
+		st = createLeveldb2()
 	case "pogreb-offsetsync":
 		options := pg.DefaultOptions()
 		options.Recovery.BatchedOffsetSync = 0
@@ -111,9 +115,11 @@ func createAndOpenStorage(bm *benchmetrics, phase string) storage.Storage {
 	case "pogreb-batch-recover":
 		options := pg.DefaultOptions()
 
-		// completely turn off compaction/sync
-		options.CompactionInterval = 0
-		options.SyncInterval = 0
+		options.CompactionInterval = 240 * time.Second
+		options.SyncInterval = 120 * time.Second
+		options.SyncAfterOffset = false
+		options.Recovery.BatchedOffsetSync = 60 * time.Second
+
 		st = createpogrebStorage(options)
 	case "sqlite":
 		st = createSqliteStorage()
@@ -352,7 +358,7 @@ func readValue(st storage.Storage, key string) {
 }
 
 func createpogrebStorage(options *pg.Options) storage.Storage {
-	sg := pg.NewStorageGroup(options, 1)
+	sg := pg.NewStorageGroup(options, 1, logger.Default())
 	st, err := sg.Build(*path)
 	if err != nil {
 		log.Fatalf("error opening database %v", err)
@@ -395,6 +401,18 @@ func createStorage() storage.Storage {
 	log.Printf("loading storage done")
 	if err != nil {
 		log.Fatalf("error creating storage: %v", err)
+	}
+
+	return st
+}
+
+func createLeveldb2() storage.Storage {
+
+	fp := filepath.Join(*path, fmt.Sprintf("%s.%d", *topic, *partition))
+	log.Printf("Opening storage")
+	st, err := ldbstorage.New(fp)
+	if err != nil {
+		log.Fatalf("error opening leveldb: %v", err)
 	}
 
 	return st
