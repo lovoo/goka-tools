@@ -122,8 +122,9 @@ func (s *sst) Open() error {
 				// reset the timer
 				compactReset(s.opts.Recovery.CompactionInterval + s.jitteredDuration(s.opts.Recovery.CompactionInterval))
 			case <-syncC:
-
-				s.putOffset(atomic.LoadInt64(&s.offset), true)
+				if s.offset != 0 {
+					s.putOffset(atomic.LoadInt64(&s.offset), true)
+				}
 				// reset the timer
 				syncReset(s.opts.Recovery.BatchedOffsetSync + s.jitteredDuration(s.opts.Recovery.BatchedOffsetSync))
 			}
@@ -287,10 +288,13 @@ func (s *sst) SetOffset(offset int64) error {
 }
 
 func (s *sst) MarkRecovered() error {
-	err := s.putOffset(atomic.LoadInt64(&s.offset), true)
-	if err != nil {
-		return err
+	if s.offset != 0 {
+		err := s.putOffset(atomic.LoadInt64(&s.offset), true)
+		if err != nil {
+			return err
+		}
 	}
+
 	close(s.recovered)
 	return nil
 }
