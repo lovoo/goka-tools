@@ -76,7 +76,10 @@ func (s *ldbstorage) Open() error {
 			case <-s.recovered:
 				return
 			case <-syncTicker.C:
-				s.putOffset(atomic.LoadInt64(&s.offset))
+				curOffset := atomic.LoadInt64(&s.offset)
+				if curOffset != 0 {
+					s.putOffset(curOffset)
+				}
 			}
 		}
 	}()
@@ -106,6 +109,10 @@ func (s *ldbstorage) Open() error {
 func (s *ldbstorage) Close() error {
 	close(s.close)
 	defer close(s.closed)
+	curOffset := atomic.LoadInt64(&s.offset)
+	if curOffset != 0 {
+		s.putOffset(curOffset)
+	}
 	s.closeWg.Wait()
 	return s.db.Close()
 }
