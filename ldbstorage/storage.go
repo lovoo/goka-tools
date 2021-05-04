@@ -46,6 +46,8 @@ func New(path string, logger logger.Logger) (storage.Storage, error) {
 		// BlockCacheCapacity:  10 * opt.MiB,
 		// WriteBuffer:         50 * opt.MiB,
 		// CompactionTableSize: 4 * 1024 * 1024,
+		BlockCacheCapacity: 32 * opt.MiB,
+		WriteBuffer:        16 * opt.MiB,
 	}
 
 	db, err := leveldb.OpenFile(path, storageOptions)
