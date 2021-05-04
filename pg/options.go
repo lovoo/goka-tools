@@ -26,8 +26,8 @@ func DefaultOptions() *Options {
 			BatchedOffsetSync  time.Duration
 			CompactionInterval time.Duration
 		}{
-			BatchedOffsetSync:  120 * time.Second,
-			CompactionInterval: 180 * time.Second,
+			BatchedOffsetSync:  1200 * time.Second,
+			CompactionInterval: 1200 * time.Second,
 		},
 	}
 }

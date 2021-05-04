@@ -295,6 +295,9 @@ func (s *sst) MarkRecovered() error {
 		}
 	}
 
+	// one last compaction, so we don't end up with a huge task when starting to process
+	s.doCompact()
+
 	close(s.recovered)
 	return nil
 }
