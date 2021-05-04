@@ -139,11 +139,10 @@ func (s *sst) Open() error {
 func (s *sst) doCompact() {
 	s.sema.Acquire()
 	start := time.Now()
-	s.logger.Printf("start compacting %s", s.path)
 	if _, err := s.db.Compact(); err != nil {
-		s.logger.Printf("error compacting: %v", err)
+		s.logger.Printf("error compacting %s: %v", s.path, err)
 	}
-	s.logger.Printf("compacting %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
+	s.logger.Printf("Compaction %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 	s.sema.Release()
 }
 
@@ -190,11 +189,10 @@ func (s *sst) compactLoop() {
 
 			s.sema.Acquire()
 			start := time.Now()
-			s.logger.Printf("start syncing %s", s.path)
 			if err := s.db.Sync(); err != nil {
-				s.logger.Printf("error syncing: %v", err)
+				s.logger.Printf("error syncing %s: %v", s.path, err)
 			}
-			s.logger.Printf("syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
+			s.logger.Printf("Syncing %s done (took %.2f seconds)", s.path, time.Since(start).Seconds())
 			s.sema.Release()
 			// reset the timer
 			syncReset(s.opts.SyncInterval + s.jitteredDuration(s.opts.SyncInterval))
