@@ -171,7 +171,6 @@ func (s *sst) compactLoop() {
 
 			s.sema.Acquire()
 			start := time.Now()
-			s.logger.Printf("start compacting %s", s.path)
 			if _, err := s.db.Compact(); err != nil {
 				s.logger.Printf("error compacting: %v", err)
 			}

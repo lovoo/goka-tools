@@ -410,7 +410,7 @@ func createLeveldb2() storage.Storage {
 
 	fp := filepath.Join(*path, fmt.Sprintf("%s.%d", *topic, *partition))
 	log.Printf("Opening storage")
-	st, err := ldbstorage.New(fp)
+	st, err := ldbstorage.New(fp, logger.Default())
 	if err != nil {
 		log.Fatalf("error opening leveldb: %v", err)
 	}
