@@ -37,7 +37,8 @@ func New(path string, logger logger.Logger) (storage.Storage, error) {
 
 	storageOptions := &opt.Options{
 
-		Filter: filter.NewBloomFilter(10),
+		Filter:    filter.NewBloomFilter(10),
+		BlockSize: 2 * opt.KiB,
 		// mongo-Ids have 24hex-values, which storing as string is 192 bits
 		// Filter: filter.NewBloomFilter(5),
 		// OpenFilesCacheCapacity: ,
