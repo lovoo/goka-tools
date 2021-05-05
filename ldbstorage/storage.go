@@ -116,6 +116,7 @@ func (s *ldbstorage) Close() error {
 		s.putOffset(curOffset)
 	}
 	s.closeWg.Wait()
+
 	return s.db.Close()
 }
 
@@ -211,11 +212,12 @@ func (s *ldbstorage) putOffset(offset int64) error {
 
 func (s *ldbstorage) SetOffset(offset int64) error {
 
+	atomic.StoreInt64(&s.offset, offset)
+
 	select {
 	case <-s.recovered:
 		return s.putOffset(offset)
 	default:
-		atomic.StoreInt64(&s.offset, offset)
 	}
 	return nil
 }

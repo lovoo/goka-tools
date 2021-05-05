@@ -271,14 +271,14 @@ func (s *sst) putOffset(offset int64, sync bool) error {
 
 func (s *sst) SetOffset(offset int64) error {
 
+	atomic.StoreInt64(&s.offset, offset)
+
 	select {
 	case <-s.recovered:
 		return s.putOffset(offset, s.opts.SyncAfterOffset)
 	default:
 		if s.opts.Recovery.BatchedOffsetSync == 0 {
 			s.putOffset(offset, true)
-		} else {
-			atomic.StoreInt64(&s.offset, offset)
 		}
 	}
 	return nil
