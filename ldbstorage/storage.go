@@ -231,9 +231,12 @@ func (s *ldbstorage) Delete(key string) error {
 }
 
 func (s *ldbstorage) MarkRecovered() error {
-	err := s.putOffset(atomic.LoadInt64(&s.offset))
-	if err != nil {
-		return err
+	curOffset := atomic.LoadInt64(&s.offset)
+	if curOffset != 0 {
+		err := s.putOffset(curOffset)
+		if err != nil {
+			return err
+		}
 	}
 	close(s.recovered)
 	return nil
