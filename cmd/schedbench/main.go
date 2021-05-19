@@ -42,7 +42,7 @@ func main() {
 
 	startExperiment(ctx, errg)
 
-	if err := errg.Wait().NilOrError(); err != nil {
+	if err := errg.Wait().ErrorOrNil(); err != nil {
 		log.Fatalf("Error running processors")
 	}
 

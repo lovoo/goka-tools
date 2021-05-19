@@ -226,7 +226,7 @@ func TestSchedulerIntegration(t *testing.T) {
 	defer func() {
 		cancel()
 
-		if err := errg.Wait().NilOrError(); err != nil {
+		if err := errg.Wait().ErrorOrNil(); err != nil {
 			t.Errorf("Error running processors: %v", err)
 		}
 
@@ -357,7 +357,7 @@ func ExampleScheduler() {
 		})
 	}
 
-	if err := errg.Wait().NilOrError(); err != nil {
+	if err := errg.Wait().ErrorOrNil(); err != nil {
 		log.Printf("Error running scheduler: %v", err)
 	}
 
