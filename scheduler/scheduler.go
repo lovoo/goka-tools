@@ -11,7 +11,6 @@ import (
 
 	"github.com/lovoo/goka"
 	"github.com/lovoo/goka/codec"
-	"github.com/lovoo/goka/logger"
 	"github.com/lovoo/goka/multierr"
 )
 
@@ -52,7 +51,7 @@ func (pt prefixAndTime) get(prefix string, timeDef int64) string {
 }
 
 var (
-	schedLog = logger.Default().Prefix("goka-tools-scheduler")
+	schedLog = goka.DefaultLogger()
 )
 
 // Emitter is a generic emitter, but probably a *goka.Emitter
@@ -240,12 +239,12 @@ func makeSortedIntervalList(intervals []time.Duration) []time.Duration {
 		interval = interval.Truncate(time.Millisecond)
 
 		if interval == 0 {
-			schedLog.Printf("WARNING: Wait times smaller than 1ms are not supported. Ignoring wait time.")
+			schedLog.Printf("Scheduler (goka-tools) WARNING: Wait times smaller than 1ms are not supported. Ignoring wait time.")
 			continue
 		}
 
 		if intervalSet[interval] {
-			schedLog.Printf("WARNING: The interval list contains a duplicate for %dms", interval.Milliseconds())
+			schedLog.Printf("Scheduler (goka-tools) WARNING: The interval list contains a duplicate for %dms", interval.Milliseconds())
 			continue
 		}
 		intervalSet[interval] = true
@@ -296,7 +295,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 	newOrder := msg.(*Order)
 	// validate order and drop if in valid
 	if err := newOrder.validate(); err != nil {
-		schedLog.Printf("Ignoring request for invalid order: %v", err)
+		schedLog.Printf("Scheduler (goka-tools) Ignoring request for invalid order: %v", err)
 		return
 	}
 
@@ -321,7 +320,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 	switch newOrder.OrderType {
 	case OrderType_Delay:
 		if order != nil {
-			schedLog.Printf("duplicate DELAY order. Each delay needs a unique key. Dropping the new order.")
+			schedLog.Printf("Scheduler (goka-tools) duplicate DELAY order. Each delay needs a unique key. Dropping the new order.")
 			return
 		}
 		if clk.Now().Sub(newOrder.ExecutionTime.AsTime()) > s.config.orderCatchupTimeout {
@@ -435,7 +434,7 @@ func (s *Scheduler) executeOrder(ctx goka.Context, msg interface{}) {
 	order := msg.(*Order)
 
 	if err := order.validate(); err != nil {
-		schedLog.Printf("Ignoring execution of invalid order: %v", err)
+		schedLog.Printf("Scheduler (goka-tools) Ignoring execution of invalid order: %v", err)
 		return
 	}
 

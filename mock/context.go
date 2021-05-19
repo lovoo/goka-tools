@@ -45,6 +45,10 @@ func NewGokaMockContext(t *testing.T) *GokaMockContext {
 	}
 }
 
+func (g *GokaMockContext) Group() goka.Group {
+	return goka.Group("mock-group")
+}
+
 func (g *GokaMockContext) Reset() {
 	g.emits = make(map[goka.Stream][]KeyedMessage)
 }
@@ -64,13 +68,13 @@ func (g *GokaMockContext) Offset() int64 {
 func (g *GokaMockContext) Value() interface{} {
 	return g.value
 }
-func (g *GokaMockContext) Headers() map[string][]byte {
+func (g *GokaMockContext) Headers() goka.Headers {
 	return g.headers
 }
-func (g *GokaMockContext) SetValue(value interface{}) {
+func (g *GokaMockContext) SetValue(value interface{}, options ...goka.ContextOption) {
 	g.value = value
 }
-func (g *GokaMockContext) Delete() {
+func (g *GokaMockContext) Delete(options ...goka.ContextOption) {
 	g.value = nil
 }
 func (g *GokaMockContext) Timestamp() time.Time {
@@ -82,13 +86,13 @@ func (g *GokaMockContext) Join(topic goka.Table) interface{} {
 func (g *GokaMockContext) Lookup(topic goka.Table, key string) interface{} {
 	return g.lookups[topic][key]
 }
-func (g *GokaMockContext) Emit(topic goka.Stream, key string, value interface{}) {
+func (g *GokaMockContext) Emit(topic goka.Stream, key string, value interface{}, options ...goka.ContextOption) {
 	g.emits[topic] = append(g.emits[topic], KeyedMessage{
 		Key:   key,
 		Value: value,
 	})
 }
-func (g *GokaMockContext) Loopback(key string, value interface{}) {
+func (g *GokaMockContext) Loopback(key string, value interface{}, options ...goka.ContextOption) {
 	g.loopbacks = append(g.loopbacks, KeyedMessage{
 		Key:   key,
 		Value: value,
