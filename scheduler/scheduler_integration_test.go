@@ -138,7 +138,7 @@ func TestScheduler_Integration(t *testing.T) {
 	cancel()
 
 	defer errg.Wait()
-	if err := errg.Wait().NilOrError(); err != nil {
+	if err := errg.Wait().ErrorOrNil(); err != nil {
 		t.Errorf("Error running scheduler: %v", err)
 	}
 }
