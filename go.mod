@@ -5,8 +5,9 @@ go 1.21
 require (
 	cloud.google.com/go v0.100.2
 	cloud.google.com/go/bigquery v1.30.0
-	github.com/IBM/sarama v1.41.3
+	github.com/IBM/sarama v1.42.1
 	github.com/benbjohnson/clock v1.0.3
+	github.com/dnwe/otelsarama v0.0.0-20240308230250-9388d9d40bc0
 	github.com/golang/protobuf v1.5.2
 	github.com/lovoo/goka v1.1.11
 	github.com/prometheus/client_golang v1.7.1
@@ -27,11 +28,13 @@ require (
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/go-logr/logr v1.2.4 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/go-cmp v0.5.7 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/googleapis/gax-go/v2 v2.2.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -57,7 +60,10 @@ require (
 	github.com/sirupsen/logrus v1.4.2 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/crypto v0.16.0 // indirect
+	go.opentelemetry.io/otel v1.19.0 // indirect
+	go.opentelemetry.io/otel/metric v1.19.0 // indirect
+	go.opentelemetry.io/otel/trace v1.19.0 // indirect
+	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220309155454-6242fa91716a // indirect
 	golang.org/x/sync v0.4.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
