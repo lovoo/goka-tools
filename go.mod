@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/datastore v1.2.0 // indirect
 	cloud.google.com/go/pubsub v1.4.0 // indirect
 	cloud.google.com/go/storage v1.9.0 // indirect
-	github.com/Shopify/sarama v1.27.0
+	github.com/Shopify/sarama v1.29.1
 	github.com/benbjohnson/clock v1.0.3
 	github.com/facebookgo/ensure v0.0.0-20200202191622-63f1cf65ac4c
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
@@ -20,12 +20,11 @@ require (
 	github.com/rs/xid v1.3.0
 	github.com/spf13/pflag v1.0.5
 	go.opencensus.io v0.22.4 // indirect
-	golang.org/x/crypto v0.0.0-20200709230013-948cd5f35899 // indirect
-	golang.org/x/net v0.0.0-20200707034311-ab3426394381
+	go.opentelemetry.io/contrib/instrumentation/github.com/Shopify/sarama/otelsarama v0.26.1
+	golang.org/x/net v0.0.0-20210614182718-04defd469f4e
 	golang.org/x/tools v0.0.0-20200618112559-5fddd300b653 // indirect
 	google.golang.org/api v0.27.0 // indirect
 	google.golang.org/genproto v0.0.0-20200709005830-7a2ca40e9dc3 // indirect
 	google.golang.org/grpc v1.30.0 // indirect
 	google.golang.org/protobuf v1.25.0
-	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 )
