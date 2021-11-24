@@ -41,6 +41,8 @@ type TableOptions struct {
 	Codec            goka.Codec
 	// CustomSchema allows us to specify the table's schema.
 	CustomSchema func() (bigquery.Schema, error)
+	// CustomObject allows us to modify the input value into another one.
+	CustomObject func(interface{}) interface{}
 }
 
 // Name returns the name of the topic
@@ -139,7 +141,7 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metri
 
 		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(),
 			m.mxTableInserts.WithLabelValues(name), m.mxErrorUpload,
-			uploaderBatchsize, uploaderTimeout)
+			uploaderBatchsize, uploaderTimeout, tableOption.CustomObject)
 	}
 
 	return &Bbq{

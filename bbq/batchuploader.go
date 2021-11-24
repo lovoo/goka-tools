@@ -17,7 +17,6 @@ type batchedUploader struct {
 	uploaded     prometheus.Counter
 	uploadFailed prometheus.Counter
 	vals         chan bigquery.ValueSaver
-	// customObject allows us to modify the input value into another one.
 	customObject func(interface{}) interface{}
 }
 
@@ -27,13 +26,15 @@ type uploader interface {
 	Put(context.Context, interface{}) error
 }
 
-func newBatchedUploader(stop chan bool, wg *sync.WaitGroup, table string, uploader uploader, uploaded prometheus.Counter, uploadFailed prometheus.Counter, batchSize int, timeout time.Duration) *batchedUploader {
+func newBatchedUploader(stop chan bool, wg *sync.WaitGroup, table string, uploader uploader, uploaded prometheus.Counter, uploadFailed prometheus.Counter, batchSize int,
+	timeout time.Duration, customObject func(interface{}) interface{}) *batchedUploader {
 	bu := &batchedUploader{
 		table:        table,
 		uploader:     uploader,
 		uploaded:     uploaded,
 		uploadFailed: uploadFailed,
 		vals:         make(chan bigquery.ValueSaver, batchSize),
+		customObject: customObject,
 	}
 
 	go func() {
