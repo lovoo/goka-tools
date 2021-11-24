@@ -39,6 +39,8 @@ type TableOptions struct {
 	TimePartitioning *bigquery.TimePartitioning
 	Input            goka.Stream
 	Codec            goka.Codec
+	// CustomSchema allows us to specify the table's schema.
+	CustomSchema func() (bigquery.Schema, error)
 }
 
 // Name returns the name of the topic
@@ -115,7 +117,7 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metri
 	ctx := context.Background()
 	client, err := bigquery.NewClient(ctx, gcpproject)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating BigQuery client: %v", err)
+		return nil, fmt.Errorf("error creating BigQuery client: %v", err)
 	}
 
 	dataset := client.Dataset(datesetName)
@@ -132,7 +134,7 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metri
 		name := strings.Replace(tableOption.Name(), "-", "_", -1)
 		err = createOrUpdateTable(ctx, dataset, name, tableOption)
 		if err != nil {
-			return nil, fmt.Errorf("Error creating table %v:%v", name, err)
+			return nil, fmt.Errorf("error creating table %v:%v", name, err)
 		}
 
 		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(),
@@ -171,14 +173,18 @@ func (b *Bbq) Stop(timeout time.Duration) {
 
 // Consume consumes the streams
 func (b *Bbq) Consume(ctx goka.Context, msg interface{}) {
-	s := &saver{
-		msgToSave: msg,
-	}
-
 	b.metrics.mxLagSeconds.Observe(time.Since(ctx.Timestamp()).Seconds())
 
 	table := strings.Replace(string(ctx.Topic()), "-", "_", -1)
+	uploader := b.uploaders[table]
 
+	if uploader.customObject != nil {
+		msg = uploader.customObject(msg)
+	}
+
+	s := &saver{
+		msgToSave: msg,
+	}
 	b.uploaders[table].Upload(s)
 }
 
@@ -194,16 +200,28 @@ func setRequiredFalse(schema bigquery.Schema) {
 
 func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name string, tableOptions *TableOptions) error {
 	if name == "" {
-		return fmt.Errorf("Empty table name")
+		return fmt.Errorf("empty table name")
 	}
 	// Check if the table exists. If it does not, a new one is created
 	table := dataset.Table(name)
 
-	// Infer the schema and set all the required fields to false
-	schema, err := inferSchema(tableOptions.Obj)
+	var (
+		schema bigquery.Schema
+		err    error
+	)
+
+	// Do not infer the schema if we give it one
+	if tableOptions.CustomSchema != nil {
+		schema, err = tableOptions.CustomSchema()
+	} else {
+		// Infer the schema
+		schema, err = inferSchema(tableOptions.Obj)
+	}
+
+	//Set all the required fields to false
 	setRequiredFalse(schema)
 	if err != nil {
-		return fmt.Errorf("Error infering schema: %v", err)
+		return fmt.Errorf("error infering schema: %v", err)
 	}
 
 	metadata, err := table.Metadata(ctx)
@@ -219,7 +237,7 @@ func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name st
 
 		err = table.Create(ctx, metadata)
 		if err != nil {
-			return fmt.Errorf("Error creating schema: %v", err)
+			return fmt.Errorf("error creating schema: %v", err)
 		}
 	} else {
 		// If the table exists, the metadata is updated
@@ -227,7 +245,7 @@ func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name st
 			Name:   name,
 			Schema: schema,
 		}, ""); err != nil {
-			return fmt.Errorf("Error updating table: %v", err)
+			return fmt.Errorf("error updating table: %v", err)
 		}
 	}
 

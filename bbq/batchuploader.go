@@ -17,6 +17,8 @@ type batchedUploader struct {
 	uploaded     prometheus.Counter
 	uploadFailed prometheus.Counter
 	vals         chan bigquery.ValueSaver
+	// customObject allows us to modify the input value into another one.
+	customObject func(interface{}) interface{}
 }
 
 // helper interface that abstracts bigquery's table uploader so we can
