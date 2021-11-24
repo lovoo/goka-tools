@@ -47,7 +47,7 @@ func TestBatchUploader(t *testing.T) {
 	// create an uploaer with batchsize 10 and a 100ms timeout
 	uploader := newBatchedUploader(stop, &wg, "test", up,
 		uploadedCounter, uploadFailedCounter,
-		10, 100*time.Millisecond)
+		10, 100*time.Millisecond, nil)
 
 	// add less than a batch and wait for the timeout
 	t.Run("timeout", func(t *testing.T) {
