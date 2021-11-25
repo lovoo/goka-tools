@@ -14,7 +14,7 @@ require (
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/facebookgo/subset v0.0.0-20200203212716-c811ad88dec4 // indirect
 	github.com/golang/protobuf v1.4.2
-	github.com/lovoo/goka v1.1.0-beta.1
+	github.com/lovoo/goka v1.1.0-beta.2
 	github.com/onsi/ginkgo v1.13.0 // indirect
 	github.com/prometheus/client_golang v1.7.1
 	github.com/rs/xid v1.3.0
@@ -27,5 +27,6 @@ require (
 	google.golang.org/genproto v0.0.0-20200709005830-7a2ca40e9dc3 // indirect
 	google.golang.org/grpc v1.30.0 // indirect
 	google.golang.org/protobuf v1.25.0
+	gopkg.in/rethinkdb/rethinkdb-go.v6 v6.2.1
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 )
