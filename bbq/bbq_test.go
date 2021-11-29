@@ -21,6 +21,18 @@ func TestSave(t *testing.T) {
 	ensure.DeepEqual(t, values["A"], "message")
 }
 
+func TestCustomSaver(t *testing.T) {
+	s := &CustomSaver{
+		values: map[string]float64{
+			"foo": 1.0,
+		},
+	}
+
+	values, _, err := s.Save()
+	ensure.Nil(t, err)
+	ensure.DeepEqual(t, values["foo"], 1.0)
+}
+
 func TestSetRequired(t *testing.T) {
 	adviceSchema, err := inferSchema(MessageA{})
 	ensure.Nil(t, err)

@@ -181,7 +181,13 @@ func (b *Bbq) Consume(ctx goka.Context, msg interface{}) {
 	uploader := b.uploaders[table]
 
 	if uploader.customObject != nil {
-		msg = uploader.customObject(msg)
+		switch co := msg.(type) {
+		case *CustomSaver:
+			b.uploaders[table].Upload(co)
+			return
+		default:
+			msg = uploader.customObject(msg)
+		}
 	}
 
 	s := &saver{
