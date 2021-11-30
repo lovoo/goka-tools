@@ -184,10 +184,13 @@ func (b *Bbq) Consume(ctx goka.Context, msg interface{}) {
 		msg = uploader.customObject(msg)
 	}
 
-	s := &saver{
-		msgToSave: msg,
+	if vs, is := msg.(bigquery.ValueSaver); is {
+		b.uploaders[table].Upload(vs)
+	} else {
+		b.uploaders[table].Upload(&saver{
+			msgToSave: msg,
+		})
 	}
-	b.uploaders[table].Upload(s)
 }
 
 func setRequiredFalse(schema bigquery.Schema) {
