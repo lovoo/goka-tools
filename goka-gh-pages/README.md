@@ -5,6 +5,7 @@
 cd goka-gh-pages
 # only first time
 git submodule update --init --recursive
+npm install -D autoprefixer postcss-cli postcss
 # serve content
 hugo serve
 # happy documenting!
