@@ -1,12 +1,11 @@
-+++
-title="Building Blocks"
-tags=["a","b"]
-+++
+---
+title: "Building Blocks"
+---
 
 Goka encourages the developer to decompose the application into microservices using three different components: emitters, processors, and views.
 The figure below depicts the abstract application again, but now showing the use of these three components together with Kafka and the external API.
 
-![simple application](figs/goka-arch-simple.png)
+![simple application](/goka/goka-arch-simple.png)
 
 **Emitters.** Part of the API offers operations that can modify the state.
 Calls to these operations are transformed into streams of messages with the help of an emitter, i.e., the state modification is persisted before performing the actual action as in the [event sourcing pattern](https://martinfowler.com/eaaDev/EventSourcing.html).

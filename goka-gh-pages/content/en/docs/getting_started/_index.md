@@ -1,11 +1,16 @@
-+++
-title="Intro"
-+++
+---
+title: "Getting Started"
+linkTitle: "Getting Started"
+weight: 1
+description: >
+  Get it up and running
+---
+
 
 
 Goka is a library, if you just want to use it, add it to your project with
 ```bash
-$ go get -u github.com/lovoo/goka
+go get -u github.com/lovoo/goka
 ```
 
 
@@ -46,3 +51,9 @@ cfg := goka.DefaultConfig()
 cfg.Version = sarama.V2_4_0_0
 goka.ReplaceGlobalConfig(cfg)
 ```
+
+
+
+* What is Kafka
+* What is Stream processing
+* What is the database inside-out principle
