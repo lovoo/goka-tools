@@ -5,3 +5,7 @@ weight: 10
 description: >
   How processors work and how to set them up
 ---
+
+
+## Lifecycle
+

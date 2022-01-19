@@ -3,7 +3,13 @@ title: Delivery Semantics
 
 ---
 
-What happens if my processor crashes?
+## Marking vs committing message offsets
+
+Sometimes there is confusion around *marking* and *comitting* messages. *Marking* is done by the processor callback, after a message has been processed and all subsequent operations - like `SetValue` or `Emit` - succeeded. The marked offset is stored and frequently *committed* back to the brokers. On graceful processor shutdown, the offsets are committed one last time. Both operations are necessary, otherwise messages are reconsumed after processor restart.
+
+Goka takes care of *marking* offsets as consumed automatically. To manually mark offsets, one can use [
+
+## What happens if my processor crashes?
 
 Is the message lost? Is the message resent? What happens to any side-effects?
 

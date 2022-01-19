@@ -1,5 +1,10 @@
 ---
-title: "Building Blocks"
+title: "Overview"
+linkTitle: "Overview"
+type: docs
+weight: 2
+description: >
+  Write your first Emitter, Processor and View
 ---
 
 Goka encourages the developer to decompose the application into microservices using three different components: emitters, processors, and views.
