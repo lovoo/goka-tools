@@ -95,7 +95,7 @@ In the example above, we do the following:
   The output is configured using `goka.Output()`, because we need to specify its name and codec, so we don't have to fiddle with `[]byte`s in the callback.
 * Accumulating the incoming values under the same key. 
 
-  Every Goka Processor can define one `group-table`, which makes it a stateful processor. Only *this* processor can write to that table, inside a callback a processor can only read and write the table-entry of the *current key* of the received message by using `ctx.Value()` and `ctx.SetValue()`.
+  Every Goka Processor can define one `group-table`, which makes it a stateful processor. A table can only be modified by the processor defining it. Modifications are limited to the key of the currrently processed key. The value for the current *key* is read by  `ctx.Value()` (or nil if not set) and written by `ctx.SetValue()`.
 
   Each `group-table` is stored locally using `leveldb` and emitted to kafka-topic, named `converter-table` in our example. This table can be used as `Lookup` by other processors or read by clients using a `View` (see next step)
 
@@ -200,5 +200,5 @@ The reason goka processors (and emitters) do not create those topics automatical
 
 The TopicManager can also set up tables (i.e. topics configured for log compaction), which is usually done by the `Processor` automatically. Sometimes it's necessary to be done manually:
 
-* if you start by implementing a view without data
-* if the company policy forces 
+* if you start adding a view without a running processor
+* if the company policy does not all creating topics during run time

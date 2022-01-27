@@ -9,19 +9,18 @@ description: >
 
 ## Setup
 
-A simple example how to set up a processor is given in [Processing Data]({{< ref "/docs/getting_started/first_steps.md#processing_data" >}}) in the introduction.
+A simple example how to set up a processor is given in [Processing Data]({{< ref "/docs/getting_started/first_steps.md#processing_data" >}}).
 
 ## Fundamentals
 
 A processor consumes messages from one or more input topics and produces messages to none or many output topics.
-
-It processor can (and will, in most cases) also have it's own state.
+It can (and will, in most cases) also have it's own state.
 
 {{< figure src="/goka/processor-plain.png" title="simplified processor" >}}
 
-A processor state is called *Table*, as it is essentially a table stored in a key-value-store. The processor defining the table is the only instance allowed to *write* to it.
+A processor state is called *Table*, since it follows key-value semantics stored in a key-value-store. The processor defining the table is the only instance allowed to *write* to that table. 
 
-Adding state introduces all kinds of race conditions, in particular on distributed and concurrent systems. So goka simplifies handling state by limiting any state changes to the *current key*. 
+Adding state introduces all kinds of race conditions, in particular in distributed and concurrent systems. So goka simplifies handling state by limiting any state changes to the currently processed key. That means, a value for a key can only be modified *while* processing a message with that key. Since messages of a single key are processed sequentially, there are no classic race conditions like *lost update*.
 
 Suppose a processor is defined with the following group graph:
 
@@ -37,9 +36,6 @@ goka.DefineGroup("accumulator",
   goka.Persist(codec.Int64),
 )
 {{< /highlight >}}
-
-
---> describe it, what is the table value at that moment?
 
 
 | Tables        | Are           | Cool  |
