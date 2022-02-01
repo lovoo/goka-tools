@@ -309,7 +309,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 
 	// set execution time if it's not specified or zero or something
 	if newOrder.ExecutionTime == nil || newOrder.ExecutionTime.AsTime().Unix() == 0 || newOrder.ExecutionTime.AsTime().IsZero() {
-		newOrder.ExecutionTime, _ = timestamppb.New(clk.Now().Add(time.Duration(newOrder.DelayMs) * time.Millisecond))
+		newOrder.ExecutionTime = timestamppb.New(clk.Now().Add(time.Duration(newOrder.DelayMs) * time.Millisecond))
 	}
 
 	var order *Order
