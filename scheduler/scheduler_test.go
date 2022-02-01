@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/lovoo/goka"
 	"github.com/lovoo/goka-tools/mock"
 	"github.com/lovoo/goka/codec"
 	"github.com/lovoo/goka/multierr"
 	"github.com/lovoo/goka/tester"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestScheduler(t *testing.T) {
@@ -131,7 +131,7 @@ func TestWaiters(t *testing.T) {
 			},
 		} {
 			ctx.Reset()
-			execTime, _ := ptypes.TimestampProto(test.dest)
+			execTime := timestamppb.New(test.dest)
 			wait := &Wait{ExecutionTime: execTime}
 			if !ws.reschedule(ctx, wait) {
 				ctx.Emit(ws.executeStream, ctx.Key(), wait)

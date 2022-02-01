@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
-	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/lovoo/goka"
 	"github.com/lovoo/goka/codec"
@@ -91,7 +91,7 @@ func (ws *waiters) reschedule(ctx goka.Context, wait *Wait) bool {
 		return false
 	}
 
-	wait.EnterQueueTime, _ = ptypes.TimestampProto(clk.Now())
+	wait.EnterQueueTime = timestamppb.New(clk.Now())
 
 	// we have a valid waiter, resend the message to this one
 	ws.config.mxRescheduled(fmt.Sprintf("%d", ws.ws[waiterIdx].maxWaitTime.Milliseconds()), 1)
@@ -309,7 +309,7 @@ func (s *Scheduler) placeOrder(ctx goka.Context, msg interface{}) {
 
 	// set execution time if it's not specified or zero or something
 	if newOrder.ExecutionTime == nil || newOrder.ExecutionTime.AsTime().Unix() == 0 || newOrder.ExecutionTime.AsTime().IsZero() {
-		newOrder.ExecutionTime, _ = ptypes.TimestampProto(clk.Now().Add(time.Duration(newOrder.DelayMs) * time.Millisecond))
+		newOrder.ExecutionTime = timestamppb.New(clk.Now().Add(time.Duration(newOrder.DelayMs) * time.Millisecond))
 	}
 
 	var order *Order
