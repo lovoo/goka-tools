@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/facebookgo/ensure"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSave(t *testing.T) {
@@ -17,17 +17,17 @@ func TestSave(t *testing.T) {
 	}
 
 	values, _, err := s.Save()
-	ensure.Nil(t, err)
-	ensure.DeepEqual(t, values["A"], "message")
+	require.Nil(t, err)
+	require.Equal(t, values["A"], "message")
 }
 
 func TestSetRequired(t *testing.T) {
 	adviceSchema, err := inferSchema(MessageA{})
-	ensure.Nil(t, err)
+	require.Nil(t, err)
 
 	setRequiredFalse(adviceSchema)
-	ensure.False(t, adviceSchema[0].Repeated)
-	ensure.False(t, adviceSchema[0].Required)
+	require.False(t, adviceSchema[0].Repeated)
+	require.False(t, adviceSchema[0].Required)
 }
 
 func TestConvertToMap(t *testing.T) {
@@ -41,9 +41,9 @@ func TestConvertToMap(t *testing.T) {
 
 	valuesMap := convertToMap(msg)
 	val, ok := valuesMap["C"]
-	ensure.True(t, ok)
+	require.True(t, ok)
 	msg2, ok := val.(map[string]bigquery.Value)
-	ensure.True(t, ok)
+	require.True(t, ok)
 	_, ok = msg2["A"]
-	ensure.True(t, ok)
+	require.True(t, ok)
 }

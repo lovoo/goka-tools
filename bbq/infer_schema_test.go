@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/facebookgo/ensure"
+	"github.com/stretchr/testify/require"
 )
 
 type sometype struct {
@@ -60,7 +60,7 @@ func TestInferSchema(t *testing.T) {
 		}
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				ensure.True(t, matchedFieldName(appendFieldSchema(test.metaSchema, schema), test.expectedSchema))
+				require.True(t, matchedFieldName(appendFieldSchema(test.metaSchema, schema), test.expectedSchema))
 			})
 		}
 	})

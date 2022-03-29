@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/Shopify/sarama"
-	"github.com/facebookgo/ensure"
 	"github.com/lovoo/goka/codec"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTailer_addMessage(t *testing.T) {
@@ -16,24 +16,24 @@ func TestTailer_addMessage(t *testing.T) {
 	}
 
 	// add items until we're full
-	ensure.True(t, tailer.numItems == 0)
+	require.True(t, tailer.numItems == 0)
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: 1, Value: []byte("asdf")})
-	ensure.True(t, tailer.numItems == 1)
+	require.True(t, tailer.numItems == 1)
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: 2, Value: []byte("asdf")})
-	ensure.True(t, tailer.numItems == 2)
+	require.True(t, tailer.numItems == 2)
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: 3, Value: []byte("asdf")})
-	ensure.True(t, tailer.numItems == 3)
+	require.True(t, tailer.numItems == 3)
 	// check correct order
-	ensure.True(t, tailer.items[0].Offset == 1)
-	ensure.True(t, tailer.items[1].Offset == 2)
-	ensure.True(t, tailer.items[2].Offset == 3)
+	require.True(t, tailer.items[0].Offset == 1)
+	require.True(t, tailer.items[1].Offset == 2)
+	require.True(t, tailer.items[2].Offset == 3)
 
 	// add one more
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: 4, Value: []byte("asdf")})
-	ensure.True(t, tailer.numItems == 4)
-	ensure.True(t, tailer.items[0].Offset == 4)
-	ensure.True(t, tailer.items[1].Offset == 2)
-	ensure.True(t, tailer.items[2].Offset == 3)
+	require.True(t, tailer.numItems == 4)
+	require.True(t, tailer.items[0].Offset == 4)
+	require.True(t, tailer.items[1].Offset == 2)
+	require.True(t, tailer.items[2].Offset == 3)
 
 }
 
@@ -48,11 +48,11 @@ func TestTailer_Read(t *testing.T) {
 	// helper function testing to read from the tailer and verifying the results
 	testRead := func(count int64, offset int64, expectedResults []string, caseNum string) {
 		items, err := tailer.Read(count, offset)
-		ensure.Nil(t, err)
-		ensure.DeepEqual(t, len(items), len(expectedResults), "case", caseNum)
+		require.Nil(t, err)
+		require.Equal(t, len(items), len(expectedResults), "case", caseNum)
 
 		for idx, expected := range expectedResults {
-			ensure.DeepEqual(t, items[idx].Value.(string), expected, "case", caseNum)
+			require.Equal(t, items[idx].Value.(string), expected, "case", caseNum)
 		}
 	}
 
@@ -112,25 +112,25 @@ func TestTailer_IterateReverse(t *testing.T) {
 		return offset
 	}
 
-	ensure.DeepEqual(t, len(iterate()), 0)
+	require.Equal(t, len(iterate()), 0)
 
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: nextOffset(), Value: []byte("a")})
-	ensure.DeepEqual(t, iterate(), []string{"a"})
-	ensure.DeepEqual(t, iterateWithOffset(1), []string{"a"})
+	require.Equal(t, iterate(), []string{"a"})
+	require.Equal(t, iterateWithOffset(1), []string{"a"})
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: nextOffset(), Value: []byte("b")})
-	ensure.DeepEqual(t, iterate(), []string{"b", "a"})
-	ensure.DeepEqual(t, iterateWithOffset(1), []string{"a"})
-	ensure.DeepEqual(t, iterateWithOffset(2), []string{"b", "a"})
+	require.Equal(t, iterate(), []string{"b", "a"})
+	require.Equal(t, iterateWithOffset(1), []string{"a"})
+	require.Equal(t, iterateWithOffset(2), []string{"b", "a"})
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: nextOffset(), Value: []byte("c")})
-	ensure.DeepEqual(t, iterate(), []string{"c", "b", "a"})
+	require.Equal(t, iterate(), []string{"c", "b", "a"})
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: nextOffset(), Value: []byte("d")})
-	ensure.DeepEqual(t, iterate(), []string{"d", "c", "b"})
+	require.Equal(t, iterate(), []string{"d", "c", "b"})
 
 	tailer.addMessage(&sarama.ConsumerMessage{Offset: nextOffset(), Value: []byte("e")})
-	ensure.DeepEqual(t, iterate(), []string{"e", "d", "c"})
-	ensure.DeepEqual(t, iterateWithOffset(6), []string{"e", "d", "c"})
-	ensure.DeepEqual(t, iterateWithOffset(5), []string{"e", "d", "c"})
-	ensure.DeepEqual(t, iterateWithOffset(4), []string{"d", "c"})
-	ensure.DeepEqual(t, iterateWithOffset(3), []string{"c"})
-	ensure.DeepEqual(t, len(iterateWithOffset(2)), 0)
+	require.Equal(t, iterate(), []string{"e", "d", "c"})
+	require.Equal(t, iterateWithOffset(6), []string{"e", "d", "c"})
+	require.Equal(t, iterateWithOffset(5), []string{"e", "d", "c"})
+	require.Equal(t, iterateWithOffset(4), []string{"d", "c"})
+	require.Equal(t, iterateWithOffset(3), []string{"c"})
+	require.Equal(t, len(iterateWithOffset(2)), 0)
 }

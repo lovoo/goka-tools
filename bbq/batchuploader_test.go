@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/facebookgo/ensure"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
 
@@ -56,13 +56,13 @@ func TestBatchUploader(t *testing.T) {
 			uploader.Upload(new(saver))
 		}
 		// nothing uploaded yet
-		ensure.DeepEqual(t, up.calls, 0)
-		ensure.DeepEqual(t, up.items, 0)
+		require.Equal(t, up.calls, 0)
+		require.Equal(t, up.items, 0)
 
 		// wait until timeout
 		time.Sleep(150 * time.Millisecond)
-		ensure.DeepEqual(t, up.calls, 1)
-		ensure.DeepEqual(t, up.items, 9)
+		require.Equal(t, up.calls, 1)
+		require.Equal(t, up.items, 9)
 
 	})
 
@@ -76,12 +76,12 @@ func TestBatchUploader(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		// at least two batches are full.
 		// if it timed out in between there may be 3
-		ensure.True(t, up.calls >= 2, up.calls)
+		require.True(t, up.calls >= 2, up.calls)
 
 		// wait until timeout, now we should have 3
 		time.Sleep(150 * time.Millisecond)
-		ensure.DeepEqual(t, up.calls, 3)
-		ensure.DeepEqual(t, up.items, 21)
+		require.Equal(t, up.calls, 3)
+		require.Equal(t, up.items, 21)
 	})
 
 	// add many items and test the graceful draining of the input channel.
@@ -98,8 +98,8 @@ func TestBatchUploader(t *testing.T) {
 		wg.Wait()
 
 		// we should still have all the calls (100 * batchsize = 1000)
-		ensure.DeepEqual(t, up.calls, 100)
-		ensure.DeepEqual(t, up.items, 1000)
+		require.Equal(t, up.calls, 100)
+		require.Equal(t, up.items, 1000)
 	})
 
 }
