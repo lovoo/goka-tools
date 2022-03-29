@@ -12,6 +12,10 @@ type sometype struct {
 	Exported   int
 }
 
+type sometype2 struct {
+	Exported2 int
+}
+
 func TestInferSchema(t *testing.T) {
 
 	t.Run("ignore-unexported", func(t *testing.T) {
@@ -34,33 +38,41 @@ func TestInferSchema(t *testing.T) {
 			t.Fatalf("Error infering schema. %v", err)
 		}
 
+		schema2, err := inferSchema(new(sometype2))
+		if err != nil {
+			t.Fatalf("Error infering schema. %v", err)
+		}
+
 		tests := []struct {
 			name           string
+			schema         bigquery.Schema
 			metaSchema     bigquery.Schema
 			expectedSchema bigquery.Schema
 		}{
 			{
 				name:       "add-new",
+				schema:     schema,
 				metaSchema: bigquery.Schema{},
 				expectedSchema: bigquery.Schema{
 					{Name: "Exported", Type: "INTEGER"},
 				},
 			},
 			{
-				name: "do-not-add",
+				name:   "do-not-add",
+				schema: schema2,
 				metaSchema: bigquery.Schema{
 					{Name: "Exported", Type: "INTEGER"},
-					{Name: "Exported-1", Type: "STRING"},
+					{Name: "Exported2", Type: "STRING"},
 				},
 				expectedSchema: bigquery.Schema{
 					{Name: "Exported", Type: "INTEGER"},
-					{Name: "Exported-1", Type: "STRING"},
+					{Name: "Exported2", Type: "STRING"},
 				},
 			},
 		}
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				require.True(t, matchedFieldName(appendFieldSchema(test.metaSchema, schema), test.expectedSchema))
+				require.True(t, matchedFieldName(appendFieldSchema(test.metaSchema, test.schema), test.expectedSchema))
 			})
 		}
 	})
