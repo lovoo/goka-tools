@@ -37,6 +37,7 @@ func TestConvertToMap(t *testing.T) {
 		C: &MessageB{
 			A: 3,
 		},
+		E: MessageC_OTHER,
 	}
 
 	valuesMap := convertToMap(msg)
@@ -44,6 +45,12 @@ func TestConvertToMap(t *testing.T) {
 	ensure.True(t, ok)
 	msg2, ok := val.(map[string]bigquery.Value)
 	ensure.True(t, ok)
-	_, ok = msg2["A"]
+	val, ok = msg2["A"]
 	ensure.True(t, ok)
+	ensure.DeepEqual(t, int64(3), val)
+
+	val, ok = valuesMap["E"]
+	ensure.True(t, ok)
+	ensure.DeepEqual(t, int64(MessageC_OTHER), val)
+
 }

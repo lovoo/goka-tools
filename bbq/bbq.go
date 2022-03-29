@@ -139,7 +139,7 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metri
 			return nil, fmt.Errorf("error creating table %v:%v", name, err)
 		}
 
-		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Uploader(),
+		uploaders[name] = newBatchedUploader(stop, &wg, name, dataset.Table(name).Inserter(),
 			m.mxTableInserts.WithLabelValues(name), m.mxErrorUpload,
 			uploaderBatchsize, uploaderTimeout, tableOption.CustomObject)
 	}
@@ -247,8 +247,9 @@ func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name st
 	} else {
 		// If the table exists, the metadata is updated
 		if _, err := table.Update(ctx, bigquery.TableMetadataToUpdate{
-			Name:   name,
-			Schema: schema,
+			Name:             name,
+			Schema:           appendFieldSchema(metadata.Schema, schema),
+			TimePartitioning: tableOptions.TimePartitioning,
 		}, ""); err != nil {
 			return fmt.Errorf("error updating table: %v", err)
 		}

@@ -213,3 +213,19 @@ func hasRecursiveType(t reflect.Type, seen *typeList) (bool, error) {
 	}
 	return false, nil
 }
+
+func appendFieldSchema(metaSchema, newSchema bigquery.Schema) bigquery.Schema {
+	m := make(map[string]bool)
+	for _, fieldSchema := range metaSchema {
+		m[fieldSchema.Name] = true
+	}
+
+	for _, fieldSchema := range newSchema {
+		if _, exists := m[fieldSchema.Name]; exists {
+			continue
+		}
+		metaSchema = append(metaSchema, fieldSchema)
+	}
+
+	return metaSchema
+}
