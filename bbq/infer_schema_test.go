@@ -49,7 +49,7 @@ func TestInferSchema(t *testing.T) {
 			{
 				name: "do-not-add",
 				metaSchema: bigquery.Schema{
-					{Name: "Exported"},
+					{Name: "Exported", Type: "INTEGER"},
 					{Name: "Exported-1", Type: "STRING"},
 				},
 				expectedSchema: bigquery.Schema{
