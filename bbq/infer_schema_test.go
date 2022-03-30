@@ -104,13 +104,18 @@ func TestInferSchema(t *testing.T) {
 							},
 						},
 					},
-					{Name: "D", Type: "INTEGER"},
+					{Name: "D", Type: "RECORD",
+						Schema: bigquery.Schema{
+							{Name: "X", Type: "STRING"},
+						},
+					},
 				},
 			},
 		}
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				require.Equal(t, len(appendFieldSchema(test.metaSchema, test.schema)), test.expectedLength)
+				h := appendFieldSchema(test.metaSchema, test.schema)
+				require.Equal(t, len(h), test.expectedLength)
 				//require.True(t, matchedFieldName(appendFieldSchema(test.metaSchema, test.schema), test.expectedSchema))
 			})
 		}
