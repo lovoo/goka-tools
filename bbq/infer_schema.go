@@ -215,17 +215,68 @@ func hasRecursiveType(t reflect.Type, seen *typeList) (bool, error) {
 }
 
 func appendFieldSchema(metaSchema, newSchema bigquery.Schema) bigquery.Schema {
-	m := make(map[string]bool)
-	for _, fieldSchema := range metaSchema {
-		m[fieldSchema.Name] = true
-	}
+	fieldNames := make(map[string]bool)
+	fieldNames = populateFieldNames(fieldNames, nil, metaSchema)
+	return mergeFieldsToBqSchema(fieldNames, nil, metaSchema, newSchema)
+}
 
+func mergeFieldsToBqSchema(fieldNames map[string]bool, parentFieldPath []string, existingSchema, newSchema bigquery.Schema) bigquery.Schema {
 	for _, fieldSchema := range newSchema {
-		if _, exists := m[fieldSchema.Name]; exists {
+		parentFieldPath = append(parentFieldPath, fieldSchema.Name)
+		//fmt.Printf("\n====== %v", parentFieldPath)
+		if _, exists := fieldNames[strings.Join(parentFieldPath, ".")]; exists {
+			if fieldSchema.Schema != nil {
+				mergeFieldsToBqSchema(fieldNames, parentFieldPath, existingSchema, fieldSchema.Schema)
+			}
+			if len(parentFieldPath) > 0 {
+				parentFieldPath = parentFieldPath[:len(parentFieldPath)-1]
+			}
 			continue
 		}
-		metaSchema = append(metaSchema, fieldSchema)
-	}
 
-	return metaSchema
+		existingSchema = append(existingSchema, fieldSchema)
+		if fieldSchema.Schema != nil {
+			mergeFieldsToBqSchema(fieldNames, parentFieldPath, existingSchema, fieldSchema.Schema)
+		}
+		if len(parentFieldPath) > 0 {
+			parentFieldPath = parentFieldPath[:len(parentFieldPath)-1]
+		}
+	}
+	return existingSchema
+}
+
+/*
+func findMetaSchemaIndexByName(parentFieldPath []string, metaSchema bigquery.Schema, fieldSchema bigquery.FieldSchema) (bigquery.Schema, error) {
+	var metaIndex []int
+	for _, fieldName := range parentFieldPath {
+		for idx, field := range metaSchema {
+			if field.Name != fieldName {
+				continue
+			}
+			metaIndex = append(metaIndex, idx)
+			metaSchema = metaSchema[idx].Schema
+			break
+		}
+	}
+	if len(parentFieldPath) != len(metaIndex) {
+		return nil, fmt.Errorf("meta schema path not found")
+	}
+	for _, idx := range metaIndex {
+		metaSchema
+	}
+}
+*/
+
+func populateFieldNames(fieldNames map[string]bool, parentFieldPath []string, schema bigquery.Schema) map[string]bool {
+	for _, fieldSchema := range schema {
+		parentFieldPath = append(parentFieldPath, fieldSchema.Name)
+		fieldNames[strings.Join(parentFieldPath, ".")] = true
+		if fieldSchema.Schema != nil {
+			populateFieldNames(fieldNames, parentFieldPath, fieldSchema.Schema)
+		}
+		if len(parentFieldPath) > 0 {
+			parentFieldPath = parentFieldPath[:len(parentFieldPath)-1]
+		}
+	}
+	return fieldNames
 }
