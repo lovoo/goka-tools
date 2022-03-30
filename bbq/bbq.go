@@ -248,7 +248,7 @@ func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name st
 		// If the table exists, the metadata is updated
 		if _, err := table.Update(ctx, bigquery.TableMetadataToUpdate{
 			Name:             name,
-			Schema:           appendFieldSchema(metadata.Schema, schema),
+			Schema:           mergeFieldsToBqSchema(metadata.Schema, schema),
 			TimePartitioning: tableOptions.TimePartitioning,
 		}, ""); err != nil {
 			return fmt.Errorf("error updating table: %v", err)
