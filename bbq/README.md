@@ -6,7 +6,7 @@ wish to write, the topic's object and its codec, and the expiration time of the 
 the message will be written.
 
 The table will be automatically created, and its name will be equal to the topic's name. If the structure of the
-object being written changes, the table's schema will be automatically updated. However, and this is a BigQuery limitation, if a field of the object is removed, the schema of the table won't be updated, and it will produce an error.
+object being written changes, the table's schema will be automatically updated and appended non-existing fields to the schema. However, and this is a BigQuery limitation, if a field of the object is removed, it won't be remove from the BBQ schema.
 
 ## Example
 

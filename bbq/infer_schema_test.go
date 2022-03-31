@@ -1,6 +1,8 @@
 package bbq
 
-import "testing"
+import (
+	"testing"
+)
 
 type sometype struct {
 	unexported int
@@ -8,7 +10,6 @@ type sometype struct {
 }
 
 func TestInferSchema(t *testing.T) {
-
 	t.Run("ignore-unexported", func(t *testing.T) {
 		schema, err := inferSchema(new(sometype))
 		if err != nil {
