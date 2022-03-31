@@ -74,6 +74,6 @@ func TestMergeSchema(t *testing.T) {
 
 		mergedSchema := mergeFieldsToBqSchema(metaSchema, schema)
 		require.Equal(t, 5, len(mergedSchema))
-		testhelpers.EnsureEqualStruct(t, mergedSchema, expectedSchema)
+		testhelpers.EnsureProtosEqual(t, mergedSchema, expectedSchema)
 	})
 }
