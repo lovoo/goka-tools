@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/lovoo/goka-tools/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,6 +73,6 @@ func TestMergeSchema(t *testing.T) {
 
 		mergedSchema := mergeFieldsToBqSchema(metaSchema, schema)
 		require.Equal(t, 5, len(mergedSchema))
-		testhelpers.EnsureProtosEqual(t, mergedSchema, expectedSchema)
+		require.EqualValues(t, mergedSchema, expectedSchema)
 	})
 }
