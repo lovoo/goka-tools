@@ -3,7 +3,6 @@ package telly
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/Shopify/sarama"
 	"github.com/lovoo/goka"
@@ -78,7 +77,6 @@ func (t *Telly) Run(ctx context.Context, brokers []string) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("starting to read %s/%d at offset %d", t.opts.topic, part, offset)
 
 		part := part
 		errg.Go(func() error {
