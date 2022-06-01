@@ -28,7 +28,6 @@ func (t *Telly) offsetKey() string {
 }
 
 func (t *Telly) readOffsetDoc(ctx context.Context) (*offsetDoc, error) {
-
 	cursor, err := t.metaTable().Get(t.offsetKey()).Run(t.rsess)
 	if err != nil {
 		return nil, fmt.Errorf("error reading stats:%v", err)
@@ -54,12 +53,10 @@ func (t *Telly) readOffsetDoc(ctx context.Context) (*offsetDoc, error) {
 	_, err = t.metaTable().Insert(&newOffsets, rethinkdb.InsertOpts{
 		Conflict: "replace",
 	}).RunWrite(t.rsess)
-	log.Printf("creating new ones. %v#", newOffsets)
 	return &newOffsets, err
 }
 
 func (t *Telly) runInserter(ctx context.Context, input <-chan *sarama.ConsumerMessage) error {
-
 	offsets, err := t.readOffsetDoc(ctx)
 	if err != nil {
 		return fmt.Errorf("error reading stats: %v", err)
@@ -68,30 +65,18 @@ func (t *Telly) runInserter(ctx context.Context, input <-chan *sarama.ConsumerMe
 	committer := time.NewTicker(maxBatch)
 	defer committer.Stop()
 
-	var (
-		batch = make([]*sarama.ConsumerMessage, 0, t.opts.inserterBatchSize)
-		start = time.Now()
-	)
+	batch := make([]*sarama.ConsumerMessage, 0, t.opts.inserterBatchSize)
 
 	var totalItemsCommitted int
 	commit := func() {
-		now := time.Now()
-
 		ctx, cancel := context.WithTimeout(context.Background(), commitTimeout)
 		defer cancel()
 
-		newItems, updatedItems, deletedItems, err := t.insertBatch(ctx, offsets, batch)
+		newItems, updatedItems, _, err := t.insertBatch(ctx, offsets, batch)
 		if err != nil {
 			log.Printf("error committing batch: %v", err)
 		}
 		totalItemsCommitted += newItems + updatedItems
-
-		defer func() {
-			// TODO: add metrics instead of logging every batch
-			if false {
-				log.Printf("commit took %v for %d new, %d updated, %d deleted items (total %d) (%.0f items/s)", time.Since(now), newItems, updatedItems, deletedItems, totalItemsCommitted, float64(totalItemsCommitted)/time.Since(start).Seconds())
-			}
-		}()
 
 		committer.Reset(maxBatch)
 		// reset batch
@@ -121,7 +106,6 @@ func (t *Telly) runInserter(ctx context.Context, input <-chan *sarama.ConsumerMe
 }
 
 func (t *Telly) insertBatch(ctx context.Context, offsets *offsetDoc, batch []*sarama.ConsumerMessage) (int, int, int, error) {
-
 	// ignore empty batch
 	if len(batch) == 0 {
 		return 0, 0, 0, nil

@@ -55,9 +55,11 @@ func (s *saver) Save() (map[string]bigquery.Value, string, error) {
 	values := convertToMap(s.msgToSave)
 	return values, "", nil
 }
+
 func convertToMap(item interface{}) map[string]bigquery.Value {
 	return convertToMapReflect(reflect.ValueOf(item).Elem())
 }
+
 func convertToMapReflect(value reflect.Value) map[string]bigquery.Value {
 	values := make(map[string]bigquery.Value, value.NumField())
 
@@ -123,7 +125,6 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metri
 	}
 
 	dataset := client.Dataset(datesetName)
-	log.Printf("BigQuery client created successfully. Writing to %s dataset", datesetName)
 
 	m := newMetrics(metricsNamespace)
 
@@ -150,7 +151,6 @@ func NewBbq(gcpproject string, datesetName string, tables []*TableOptions, metri
 		stopUploaders: stop,
 		uploadersWg:   &wg,
 	}, nil
-
 }
 
 // Stop drains the batches in the bbq-uploaders and blocks until they're done
@@ -167,7 +167,6 @@ func (b *Bbq) Stop(timeout time.Duration) {
 
 	select {
 	case <-done:
-		log.Printf("BBQ: uploaders fully drained. BBQ is shutting down cleanly")
 	case <-time.After(timeout):
 		log.Printf("Timeout shutting down bbq, we will lose some data. Sorry.")
 	}
@@ -223,7 +222,7 @@ func createOrUpdateTable(ctx context.Context, dataset *bigquery.Dataset, name st
 		schema, err = inferSchema(tableOptions.Obj)
 	}
 
-	//Set all the required fields to false
+	// Set all the required fields to false
 	setRequiredFalse(schema)
 	if err != nil {
 		return fmt.Errorf("error infering schema: %v", err)
