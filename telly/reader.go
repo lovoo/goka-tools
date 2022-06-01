@@ -51,13 +51,11 @@ func (t *Telly) offsetForPartition(offsets *offsetDoc, partition int32, tmgr gok
 }
 
 func (t *Telly) readPartition(ctx context.Context, part int32, cons sarama.Consumer, offset int64, inputMsgChan chan<- *sarama.ConsumerMessage) error {
-
 	partCons, err := cons.ConsumePartition(t.opts.topic, part, offset)
 	if err != nil {
 		return fmt.Errorf("error creating partition consumer %s/%d: %v", t.opts.topic, part, err)
 	}
 	defer func() {
-		log.Printf("reading partition done")
 		if err := partCons.Close(); err != nil {
 			log.Printf("error closing partition consumer %s/%d: %v", t.opts.topic, part, err)
 		}

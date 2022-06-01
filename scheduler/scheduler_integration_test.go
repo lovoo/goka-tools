@@ -82,7 +82,6 @@ func TestScheduler_Integration(t *testing.T) {
 		t.Errorf("Error creating order emitter: %v", err)
 	}
 
-	log.Printf("waiting for processors to get up")
 	// need some time to start the processors
 	time.Sleep(10 * time.Second)
 
@@ -144,7 +143,6 @@ func TestScheduler_Integration(t *testing.T) {
 }
 
 func startScheduler(ctx context.Context, errg *multierr.ErrGroup, prefix string) *Scheduler {
-
 	sched := CreateScheduler(NewConfig(), []time.Duration{
 		1 * time.Second,
 		50 * time.Millisecond,
@@ -179,14 +177,12 @@ type receiverProc struct {
 }
 
 func createReceiverProc(ctx context.Context, t *testing.T, errg *multierr.ErrGroup) *receiverProc {
-
 	rp := &receiverProc{
 		received: make(map[string]string),
 	}
 	proc, err := goka.NewProcessor([]string{*broker}, goka.DefineGroup(
 		"receiver-proc",
 		goka.Input(targetTopic, new(codec.String), func(ctx goka.Context, msg interface{}) {
-			// log.Printf("receiving %s, %v", ctx.Key(), msg)
 			rp.m.Lock()
 			defer rp.m.Unlock()
 			rp.received[ctx.Key()] = msg.(string)
@@ -204,11 +200,9 @@ func createReceiverProc(ctx context.Context, t *testing.T, errg *multierr.ErrGro
 
 	return rp
 }
-func (rp *receiverProc) checkValue(t *testing.T, timeout time.Duration, key string, value string) {
 
-	var (
-		waitTime = 10 * time.Millisecond
-	)
+func (rp *receiverProc) checkValue(t *testing.T, timeout time.Duration, key string, value string) {
+	waitTime := 10 * time.Millisecond
 	start := time.Now()
 	for {
 		time.Sleep(waitTime)
@@ -235,7 +229,7 @@ func (rp *receiverProc) clear() {
 }
 
 func randKey() string {
-	var target = make([]byte, 4)
+	target := make([]byte, 4)
 	rand.Read(target)
 
 	return hex.EncodeToString(target)
