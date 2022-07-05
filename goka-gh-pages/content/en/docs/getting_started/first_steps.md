@@ -201,4 +201,4 @@ The reason goka processors (and emitters) do not create those topics automatical
 The TopicManager can also set up tables (i.e. topics configured for log compaction), which is usually done by the `Processor` automatically. Sometimes it's necessary to be done manually:
 
 * if you start adding a view without a running processor
-* if the company policy does not all creating topics during run time
+* if the company policy does not allow creating topics during run time
