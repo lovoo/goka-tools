@@ -8,7 +8,7 @@ description: >
 
 
 
-## A generic processor-builder
+## Buildin a custom processor-builder
 
 * add default options
 * modifying the group graph

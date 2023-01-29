@@ -1,7 +1,7 @@
 ---
 title: "Using Processors"
 linkTitle: "Using Processors"
-weight: 10
+weight: 3
 description: >
   How processors work and how to set them up
 ---
@@ -9,7 +9,7 @@ description: >
 
 ## Setup
 
-A simple example how to set up a processor is given in [Processing Data]({{< ref "/docs/getting_started/first_steps.md#processing_data" >}}).
+A simple example how to set up a processor is given in [Processing Data]({{< ref "/docs/getting_started/first_steps.md#processing-data" >}}).
 
 ## Fundamentals
 
@@ -36,16 +36,6 @@ goka.DefineGroup("accumulator",
   goka.Persist(codec.Int64),
 )
 {{< /highlight >}}
-
-
-| Tables        | Are           | Cool  |
-| ------------- |:-------------:| -----:|
-| col 3 is      | right-aligned | $1600 |
-| col 2 is      | centered      |   $12 |
-| zebra stripes | are neat      |    $1 |
-
-
-
 
 Under the hood, it's not that simple though. In Kafka, topics are divided into partitions, each message belonging to a distinct partition.
 For each partition, a processor runs a *PartitionProcessor* of the input topic *running in its own goroutine*.

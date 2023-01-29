@@ -8,7 +8,7 @@ description: >
 
 
 
-Goka is a library, if you just want to use it, add it to your project with
+Goka is a library. To use it, add it to your project with
 ```bash
 go get -u github.com/lovoo/goka
 ```
@@ -52,8 +52,6 @@ cfg.Version = sarama.V2_4_0_0
 goka.ReplaceGlobalConfig(cfg)
 ```
 
+## More Resources
 
-
-* What is Kafka
-* What is Stream processing
-* What is the database inside-out principle
+* Learn about Apache Kafka by reading its [documentation](https://kafka.apache.org/documentation/)

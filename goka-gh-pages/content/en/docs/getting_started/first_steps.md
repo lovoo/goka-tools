@@ -9,7 +9,7 @@ description: >
 
 This page shows simple examples of the three building blocks of Goka to get you up and running in no time. 
 
-Check out the `Guide` for an in-depth introduction to all components or dive into more complex [examples](https://github.com/lovoo/goka/tree/master/examples) in the repository.
+Check out the [Guide]({{< ref "/docs/guide" >}}) for an in-depth introduction to all components or dive into more complex [examples](https://github.com/lovoo/goka/tree/master/examples) in the repository.
 
 ### Adding data to Kafka
 
@@ -36,9 +36,12 @@ for i:=0;;i++{
 }
 {{< /highlight >}}
 
-So what's happening here? The emitter is a simple wrapper around a `Sarama AsyncProducer`. All it needs to know is brokers, the target topic and a `Codec`, which is used to convert the provided value (here an `int64`) to `[]byte`.
+So what's happening here? The emitter is more or less a wrapper around a `Sarama AsyncProducer`. It needs
+* brokers to connect to
+* a target topic
+* a [Codec]({{< ref "/docs/guide/01_principles#Codecs" >}}), used to convert to the `[]byte` data which kafka uses
 
-Kafka also `[]byte` for keys as well, but for convenience goka assumes all keys are `string`. 
+Kafka also `[]byte` for keys as well, but for convenience goka assumes all keys are `string`.
 
 Note that the emitter does not create the topic, if you need to do that manually, see  [Creating kafka topics](#creating-kafka-topics)
 
@@ -46,7 +49,7 @@ The topic now ends up being filled with the key-value pairs: `(key-0, 0)`, `(key
 
 ### Processing data
 
-Writing a processor is dead simple. Here is some very simple processor, converting `int64` to `string` and accumulating the incoming numbers by key
+Here is a simple processor, converting `int64` to `string` and accumulating the incoming numbers by key
 
 {{< highlight go "linenos=table">}} 
 
@@ -78,21 +81,21 @@ if err := proc.Run(context.Background()); err != nil{
 
 What do you need to set it up?
 * list of brokers
-* a group graph
+* a [group graph]({{< ref "/docs/guide/03_processor.md" >}})
 
 A group graph configures the *group* of the processor, as well as input and output topics. This is only the most basic example though, check out `Creating a Group Graph` for more details. It's called group graph, since we consider a bunch of goka-components as a *topology* or *graph*.
 
-The *group* of the processor is used by Kafka's rebalance protocol. By default, starting multiple instances with the same *group* will split partitions, so provides a way to scale horizontally. That's what you need to know for now.
+The *group* of the processor is used by Kafka's rebalance protocol. By default, starting multiple instances with the same *group* will split partitions, so provides a way to scale horizontally.
 
 In the example above, we do the following:
-* use `goka.Input` to consume `int64-numbers`, which is filled with numbers by the [Emitter](#adding-data-to-kafka) above)
+* use `goka.Input` to consume `int64-numbers` (created by the [Emitter](#adding-data-to-kafka) above)
 
   The provided callback is called for every key-value-pair (in parallel - one go-routine for each partition)
   
-  The codec takes care of converting each `[]byte` message to `int64` for us safely.
-* `Sprintf` it into a `string` and emit it using the same `key` into `string-numbers`. 
+  The codec takes care of converting each `[]byte` message to `int64`.
+* `Sprintf` it into a `string` and emit it using the same key into `string-numbers`. 
 
-  The output is configured using `goka.Output()`, because we need to specify its name and codec, so we don't have to fiddle with `[]byte`s in the callback.
+  The output is configured using `goka.Output()`, because we need to specify its name and codec, so we don't have to work with `[]byte`s in the callback.
 * Accumulating the incoming values under the same key. 
 
   Every Goka Processor can define one `group-table`, which makes it a stateful processor. A table can only be modified by the processor defining it. Modifications are limited to the key of the currrently processed key. The value for the current *key* is read by  `ctx.Value()` (or nil if not set) and written by `ctx.SetValue()`.
@@ -202,3 +205,4 @@ The TopicManager can also set up tables (i.e. topics configured for log compacti
 
 * if you start adding a view without a running processor
 * if the company policy does not allow creating topics during run time
+

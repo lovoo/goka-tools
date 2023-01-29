@@ -1,6 +1,10 @@
 ---
 title: Delivery Semantics
-
+linkTitle: "Delivery Semantics"
+weight: 10
+description: >
+  Delivery Semantics and Crash handling
+---
 ---
 
 ## Marking vs committing message offsets
@@ -25,3 +29,5 @@ That means however, that the side-effects (emitting other messages, updating the
 
 The result is, there is no exactly-once guarantee in Goka. For example, if processing offset 42 generates messages A and B, and emitting of B fails, then A and B will be emitted again when 42 is reprocessed. So you'll see A twice downstream. Goka will give you at-least-once. 
 If you need exactly-once, maybe take should look into ksql or kstreams. However, usually one doesn't need exactly-once and it's sufficient to make the processing of events idempotent.
+
+## Delaying message commit in the callback
