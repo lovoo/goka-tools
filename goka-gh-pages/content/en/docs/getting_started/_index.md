@@ -6,13 +6,11 @@ description: >
   Get it up and running
 ---
 
+You can install Goka by running the following command:
 
-
-Goka is a library. To use it, add it to your project with
 ```bash
 go get -u github.com/lovoo/goka
 ```
-
 
 If you are new to goka, best clone the repo to check out the examples. They come with a ready-to-go kafka-cluster using `docker-compose`.
 
@@ -25,7 +23,6 @@ git clone https://github.com/lovoo/goka.git
 git clone git@github.com:lovoo/goka.git
 # or
 gh repo clone lovoo/goka
-
 
 ## go to the examples
 cd goka/examples
@@ -41,10 +38,9 @@ go run 1-simplest/main.go
 
 ```
 
+Goka relies on [Sarama](https://github.com/IBM/sarama) to perform the actual communication with Kafka, which offers many configuration settings. The config is documented [here](https://godoc.org/github.com/IBM/sarama#Config).
 
-Goka relies on [Sarama](https://github.com/Shopify/sarama) to perform the actual communication with Kafka, which offers many configuration settings. The config is documented [here](https://godoc.org/github.com/Shopify/sarama#Config).
-
-In most cases, you need to modify the config, e.g. to set the Kafka Version.
+In most cases you need to modify the config e.g. to set the Kafka Version.
 
 ```golang
 cfg := goka.DefaultConfig()
