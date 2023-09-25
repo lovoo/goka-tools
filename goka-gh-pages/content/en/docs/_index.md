@@ -1,4 +1,3 @@
-
 ---
 title: "Documentation"
 linkTitle: "Documentation"
@@ -9,5 +8,3 @@ menu:
 ---
 
 This section documents Goka. For more information about its history, see [About](/about/).
-
-
