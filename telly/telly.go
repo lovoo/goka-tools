@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/lovoo/goka"
 	"github.com/lovoo/goka/multierr"
 
@@ -21,8 +21,8 @@ type Telly struct {
 // NewTelly creates a new telly importer
 func NewTelly(ctx context.Context, executor rdb.QueryExecutor, dbName string,
 	table string, inputTopic string, codec goka.Codec,
-	options ...Option) (*Telly, error) {
-
+	options ...Option,
+) (*Telly, error) {
 	opts, err := createOptions(dbName, table, inputTopic, codec, options...)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,6 @@ func NewTelly(ctx context.Context, executor rdb.QueryExecutor, dbName string,
 
 // Run starts the importer and cleaner with passed brokers
 func (t *Telly) Run(ctx context.Context, brokers []string) error {
-
 	cons, err := t.opts.consBuilder(brokers, t.opts.clientID)
 	if err != nil {
 		return err

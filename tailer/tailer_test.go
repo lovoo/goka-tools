@@ -3,7 +3,7 @@ package tailer
 import (
 	"testing"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/lovoo/goka/codec"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +34,6 @@ func TestTailer_addMessage(t *testing.T) {
 	require.True(t, tailer.items[0].Offset == 4)
 	require.True(t, tailer.items[1].Offset == 2)
 	require.True(t, tailer.items[2].Offset == 3)
-
 }
 
 func TestTailer_Read(t *testing.T) {

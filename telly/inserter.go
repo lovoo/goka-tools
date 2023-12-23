@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"gopkg.in/rethinkdb/rethinkdb-go.v6"
 	rdb "gopkg.in/rethinkdb/rethinkdb-go.v6"
 )
