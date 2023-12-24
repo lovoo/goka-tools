@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 
 	"github.com/lovoo/goka"
 )
@@ -173,10 +173,8 @@ const (
 	EndOffset int64 = -1
 )
 
-var (
-	// ErrStop indicates the iteration should be stopped. This can be returned from the iterate-Visitor
-	ErrStop = errors.New("iteration stopped")
-)
+// ErrStop indicates the iteration should be stopped. This can be returned from the iterate-Visitor
+var ErrStop = errors.New("iteration stopped")
 
 // IterateReverse iterates over all items ignoring items having bigger offset than maxOffset
 // (or all, if EndOffset is given)
@@ -264,7 +262,7 @@ func (t *Tailer) Read(num int64, offset int64) ([]*TailerItem, error) {
 	// prepare the list with appropriate capacity
 	items := make([]*TailerItem, 0, lastIndex-firstIndex)
 
-	//fmt.Printf("num=%d, offset=%d, numItems=%d, first=%d, last=%d, items-len=%d, items-cap=%d\n", num, offset, numItems, firstIndex, lastIndex, len(items), cap(items))
+	// fmt.Printf("num=%d, offset=%d, numItems=%d, first=%d, last=%d, items-len=%d, items-cap=%d\n", num, offset, numItems, firstIndex, lastIndex, len(items), cap(items))
 
 	// iterate from lastIndex to firstindex
 	for idx := lastIndex; idx > firstIndex; idx-- {
