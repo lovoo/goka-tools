@@ -11,11 +11,11 @@ type GCodec[V any] interface {
 	GDecode(data []byte) (value V, err error)
 }
 
-type codecBridge[T any] struct {
+type codecAdapter[T any] struct {
 	c GCodec[T]
 }
 
-func (cb *codecBridge[T]) Encode(value interface{}) ([]byte, error) {
+func (cb *codecAdapter[T]) Encode(value any) ([]byte, error) {
 	tVal, ok := value.(T)
 	var zero T
 	if !ok {
@@ -24,20 +24,20 @@ func (cb *codecBridge[T]) Encode(value interface{}) ([]byte, error) {
 	return cb.c.GEncode(tVal)
 }
 
-func (cb *codecBridge[T]) Decode(data []byte) (interface{}, error) {
+func (cb *codecAdapter[T]) Decode(data []byte) (any, error) {
 	return cb.c.GDecode(data)
 }
 
-// CodecBridge converts a untyped (goka) codec to a typed codec
-func NewCodecBridge[T any](codec GCodec[T]) goka.Codec {
-	return &codecBridge[T]{
+// CodecAdapter adapts a typed gtyped.Codec to an untyped (goka) codec
+func NewCodecAdapter[T any](codec GCodec[T]) goka.Codec {
+	return &codecAdapter[T]{
 		c: codec,
 	}
 }
 
 type StringCodec[T ~string] struct{}
 
-func (s *StringCodec[T]) GEncode(value T) (data []byte, err error) {
+func (s *StringCodec[T]) GEncode(value T) ([]byte, error) {
 	return []byte(string(value)), nil
 }
 

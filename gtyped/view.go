@@ -28,7 +28,7 @@ type gView[K, V any] struct {
 // Goka views traditionally treat keys as string. To avoid having to define two codecs, use
 // NewGStringView instead, which only requires a value-codec.
 func NewGView[K, V any](brokers []string, table goka.Table, keyCodec GCodec[K], valueCodec GCodec[V], options ...goka.ViewOption) (GView[K, V], error) {
-	valueBridge := NewCodecBridge(valueCodec)
+	valueBridge := NewCodecAdapter(valueCodec)
 	view, err := goka.NewView(brokers, table, valueBridge, options...)
 	if err != nil {
 		return nil, err
