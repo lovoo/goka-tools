@@ -246,7 +246,8 @@ func TestDiskTail(t *testing.T) {
 			m.Lock()
 			defer m.Unlock()
 			keys = append(keys, item.Key)
-			values = append(values, item.Value)
+			val, _ := item.Value()
+			values = append(values, val)
 			return Continue
 		}
 

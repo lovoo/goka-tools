@@ -127,7 +127,15 @@ func NewDiskTail[T any](brokers []string, topic string, codec gtyped.GCodec[T], 
 		return nil, fmt.Errorf("error building consumer: %w", err)
 	}
 
-	store, err := pebble.Open(path, &pebble.Options{})
+	cache := pebble.NewCache(500 << 20) // << 20 shifts to MB
+
+	store, err := pebble.Open(path, &pebble.Options{
+		DisableWAL:               true,
+		Cache:                    cache,
+		TableCache:               pebble.NewTableCache(cache, 20, 100),
+		MemTableSize:             uint64(100 << 20), // 100mb memtable to avoid too many compactions
+		MaxConcurrentCompactions: func() int { return 3 },
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error opening storage %s: %w", path, err)
 	}
@@ -330,10 +338,19 @@ func (is *IterStats) OldestItem() time.Time {
 }
 
 type Item[T any] struct {
-	Value     T
+	value     []byte
 	Key       string
 	Timestamp time.Time
 	Partition int32
+	codec     gtyped.GCodec[T]
+}
+
+func (i *Item[T]) Value() (T, error) {
+	item, err := i.codec.GDecode(i.value)
+	if err != nil {
+		return item, fmt.Errorf("error decoding value: %w", err)
+	}
+	return item, nil
 }
 
 type HandleResult int32
@@ -415,23 +432,20 @@ iterateTail:
 		// decode it using the codec and deduplicate using the key.
 		key, value := decodeValue(it.Value())
 
-		item, err := r.codec.GDecode(value)
-		if err != nil {
-			return fmt.Errorf("error decoding value: %w", err)
-		}
-
 		stats.m.Lock()
 		stats.itemsIterated++
 		stats.m.Unlock()
 
 		workerChan := workers.getWorker(partition, itemHandler)
-
+		valueCopy := make([]byte, len(value))
+		copy(valueCopy, value) // decoding is more expensive than copying the slice, so let's try that
 		select {
 		case workerChan <- &Item[T]{
-			Value:     item,
+			value:     valueCopy,
 			Key:       string(key),
 			Timestamp: timestamp,
 			Partition: partition,
+			codec:     r.codec,
 		}:
 		case <-ctx.Done():
 			break iterateTail
