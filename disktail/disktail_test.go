@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestEncodeDecodeKey(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			encoded := encodeKey(test.timestamp, test.offset, test.partition)
 
-			require.Len(t, encoded, dataKeyLen)
+			require.Len(t, encoded, keyLen)
 
 			decTimestamp, decOffset, decPartition := decodeKey(encoded)
 			require.EqualValues(t, test.timestamp.UTC(), decTimestamp.UTC())
@@ -82,11 +83,13 @@ func TestEncodeDecodeValue(t *testing.T) {
 // Tests that the order of keys is maintained based on time even across different
 // partitions.
 func TestOrder(t *testing.T) {
-	highestPartitionKey := offsetKeyForPartition(math.MaxInt32)
-	require.EqualValues(t, -1, bytes.Compare(highestPartitionKey, endOffsetRange))
+	now := time.Now()
+	highestPartitionKey := encodeKey(now, 0, math.MaxInt32)
+	require.EqualValues(t, -1, bytes.Compare(endOffsetRange, highestPartitionKey))
 
-	lowestDataKey := encodeKey(time.Time{}, 0, 0)
-	require.EqualValues(t, -1, bytes.Compare(highestPartitionKey, lowestDataKey))
+	lowestPartitionKey := encodeKey(now, 0, 0)
+	require.EqualValuesf(t, -1, bytes.Compare(lowestPartitionKey, highestPartitionKey), "lowest %v, highest %v", lowestPartitionKey, highestPartitionKey)
+	require.EqualValues(t, -1, bytes.Compare(endOffsetRange, highestPartitionKey))
 
 	// data1 is before data2 because timestamp is lower, even though offset and partition is higher
 	data1 := encodeKey(time.Unix(1715363934, 0), 2, 1)
@@ -100,7 +103,7 @@ func TestDiskTail(t *testing.T) {
 	clk := clock.NewMock()
 	clk.Set(now)
 
-	createTailer := func(t *testing.T, numPartitions int32) (*mocks.Consumer, *DiskTail[string]) {
+	createTailer := func(t *testing.T, numPartitions int32, cleanerInterval time.Duration, cleanerMaxAge time.Duration) (*mocks.Consumer, *DiskTail[string]) {
 		dir, err := os.MkdirTemp("", "disktail*")
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
@@ -118,6 +121,8 @@ func TestDiskTail(t *testing.T) {
 				return mockCons, nil
 			},
 			Clk:           clk,
+			MaxAge:        cleanerMaxAge,
+			CleanInterval: cleanerInterval,
 			InitialOffset: sarama.OffsetNewest,
 		})
 		require.NoError(t, err)
@@ -135,7 +140,7 @@ func TestDiskTail(t *testing.T) {
 		}
 	}
 	t.Run("empty-store-offset", func(t *testing.T) {
-		mock, dt := createTailer(t, 2)
+		mock, dt := createTailer(t, 2, 0, 0)
 
 		p1 := mock.ExpectConsumePartition("topic", 0, sarama.OffsetNewest)
 		p2 := mock.ExpectConsumePartition("topic", 1, sarama.OffsetNewest)
@@ -173,7 +178,7 @@ func TestDiskTail(t *testing.T) {
 	})
 
 	t.Run("load-offsets", func(t *testing.T) {
-		mock, dt := createTailer(t, 1)
+		mock, dt := createTailer(t, 1, 0, 0)
 
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -209,7 +214,7 @@ func TestDiskTail(t *testing.T) {
 	})
 
 	t.Run("iterate", func(t *testing.T) {
-		mock, dt := createTailer(t, 2)
+		mock, dt := createTailer(t, 2, 0, 0)
 
 		p1 := mock.ExpectConsumePartition("topic", 0, sarama.OffsetNewest)
 		p2 := mock.ExpectConsumePartition("topic", 1, sarama.OffsetNewest)
@@ -280,6 +285,124 @@ func TestDiskTail(t *testing.T) {
 			require.EqualValues(t, 4, stats.UniqueKeys()) // 0 as we did not deduplicate
 			require.ElementsMatch(t, []string{"key-b", "key-d", "key-c", "key-a"}, keys)
 			require.ElementsMatch(t, []string{"11", "14", "13", "10"}, values)
+		})
+
+		cancel()
+		<-done
+		require.NoError(t, runErr)
+	})
+
+	t.Run("load-offsets", func(t *testing.T) {
+		mock, dt := createTailer(t, 1, 0, 0)
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		var (
+			done   = make(chan struct{})
+			runErr error
+		)
+
+		// offset 3 is stored, so we'll expect offset 4 to be consumed
+		require.NoError(t, dt.storeOffset(0, 3))
+		p1 := mock.ExpectConsumePartition("topic", 0, 4)
+
+		// emit some more messages
+		p1.YieldMessage(msg("e", "f", 15)) // 4
+		p1.YieldMessage(msg("e", "f", 15)) // 5
+		p1.YieldMessage(msg("e", "f", 15)) // 6
+
+		go func() {
+			defer close(done)
+			runErr = dt.Run(ctx)
+		}()
+
+		waitDelay(t, func() bool {
+			offsets, err := dt.getOffsets([]int32{0})
+			require.NoError(t, err)
+
+			return offsets[0] == 6
+		})
+
+		cancel()
+		<-done
+		require.NoError(t, runErr)
+	})
+
+	t.Run("clean", func(t *testing.T) {
+
+		mock, dt := createTailer(t, 1, time.Second, 2*time.Second)
+
+		dt.config.Clk.(*clock.Mock).Set(time.Now())
+
+		p1 := mock.ExpectConsumePartition("topic", 0, sarama.OffsetNewest)
+
+		p1.YieldMessage(msg("key-a", "10", 0))
+		p1.YieldMessage(msg("key-a", "10", 0))
+		p1.YieldMessage(msg("key-a", "10", 4))
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		var (
+			done   = make(chan struct{})
+			runErr error
+		)
+		go func() {
+			defer close(done)
+			runErr = dt.Run(ctx)
+		}()
+
+		waitDelay(t, func() bool {
+			offsets, err := dt.getOffsets([]int32{0})
+			require.NoError(t, err)
+			return offsets[0] == 1
+		})
+
+		var (
+			iterated atomic.Int64
+		)
+		handler := func(item *Item[string]) HandleResult {
+			iterated.Add(1)
+			return Continue
+		}
+
+		t.Run("iterate with duplicates", func(t *testing.T) {
+
+			// let the items flow in
+			time.Sleep(100 * time.Millisecond)
+
+			stats := IterStats{}
+			iterated.Store(0)
+			err := dt.Iterate(ctx, false, &stats, handler)
+			require.NoError(t, err)
+			require.EqualValues(t, 3, stats.ItemsIterated())
+			require.EqualValues(t, 3, iterated.Load())
+
+			// move forward 1.5 seconds, the cleaner should have been run once, but not removed anything
+			dt.config.Clk.(*clock.Mock).Add(1500 * time.Millisecond)
+			stats = IterStats{}
+			iterated.Store(0)
+			err = dt.Iterate(ctx, false, &stats, handler)
+			require.NoError(t, err)
+			require.EqualValues(t, 3, stats.ItemsIterated())
+			require.EqualValues(t, 3, iterated.Load())
+
+			// move forward 1.5 seconds, cleaner should have cleaned the last two values
+			dt.config.Clk.(*clock.Mock).Add(1500 * time.Millisecond)
+			stats = IterStats{}
+			iterated.Store(0)
+			err = dt.Iterate(ctx, false, &stats, handler)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, stats.ItemsIterated())
+			require.EqualValues(t, 1, iterated.Load())
+
+			// move forward 1.5 seconds, cleaner should have cleaned the last two values
+			dt.config.Clk.(*clock.Mock).Add(5 * time.Second)
+			stats = IterStats{}
+			iterated.Store(0)
+			err = dt.Iterate(ctx, false, &stats, handler)
+			require.NoError(t, err)
+			require.EqualValues(t, 0, stats.ItemsIterated())
+			require.EqualValues(t, 0, iterated.Load())
 		})
 
 		cancel()

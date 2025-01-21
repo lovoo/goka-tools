@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"log"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,13 +68,12 @@ type DiskTail[T any] struct {
 }
 
 type Config struct {
-	ConsumerBuilder    goka.SaramaConsumerBuilder
-	MaxAge             time.Duration
-	CleanInterval      time.Duration
-	Clk                clock.Clock
-	InitialOffset      int64
-	ConcurrentHandlers int
-	ClientId           string // client-id used for sarama and for the goka tester
+	ConsumerBuilder goka.SaramaConsumerBuilder
+	MaxAge          time.Duration
+	CleanInterval   time.Duration
+	Clk             clock.Clock
+	InitialOffset   int64
+	ClientId        string // client-id used for sarama and for the goka tester
 }
 
 func (c *Config) defaults() *Config {
@@ -100,10 +101,8 @@ func (c *Config) defaults() *Config {
 		c.Clk = clock.New()
 	}
 
-	// per default use 8 handlers
-	if c.ConcurrentHandlers <= 0 {
-		c.ConcurrentHandlers = 8
-	}
+	// TODO: implement auto-deduplicator, add that to config
+	// iterate doesn't have to have the dedup option
 
 	if c.ClientId == "" {
 		c.ClientId = "disktail"
@@ -115,7 +114,7 @@ func (c *Config) defaults() *Config {
 // Marks the end of the offset-key-range, i.e. all offset keys will
 // be smaller and all data-keys will be bigger.
 // this is used as a range-start to delete old values in the tailer
-var endOffsetRange = []byte{0xff, 0xff, 0xff, 0xff}
+var endOffsetRange = encodeOffsetKey(math.MaxInt32)
 
 func NewDiskTail[T any](brokers []string, topic string, codec gtyped.GCodec[T], path string, config *Config) (*DiskTail[T], error) {
 
@@ -244,7 +243,12 @@ func (r *DiskTail[T]) handleMessages(ctx context.Context) error {
 				continue
 			}
 
-			err := r.store.Set(encodeKey(msg.Timestamp, msg.Offset, msg.Partition), encodeValue(msg.Key, msg.Value), nosyncOption)
+			ts := msg.Timestamp
+			if ts.IsZero() {
+				ts = r.config.Clk.Now()
+			}
+			key := encodeKey(ts, msg.Offset, msg.Partition)
+			err := r.store.Set(key, encodeValue(msg.Key, msg.Value), nosyncOption)
 			if err != nil {
 				return fmt.Errorf("error storing value for key %s (partition=%d): %w", string(msg.Key), msg.Partition, err)
 			}
@@ -263,14 +267,14 @@ func (r *DiskTail[T]) handleMessages(ctx context.Context) error {
 func (r *DiskTail[T]) storeOffset(partition int32, offset int64) error {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, uint64(offset))
-	return r.store.Set(offsetKeyForPartition(partition), buf, nosyncOption)
+	return r.store.Set(encodeOffsetKey(partition), buf, nosyncOption)
 }
 
 func (r *DiskTail[T]) getOffsets(partitions []int32) ([]int64, error) {
 	offsets := make([]int64, len(partitions))
 
 	for idx, part := range partitions {
-		val, closer, err := r.store.Get(offsetKeyForPartition(part))
+		val, closer, err := r.store.Get(encodeOffsetKey(part))
 		if err != nil {
 			if err == pebble.ErrNotFound {
 				offsets[idx] = -1
@@ -286,23 +290,20 @@ func (r *DiskTail[T]) getOffsets(partitions []int32) ([]int64, error) {
 
 func (r *DiskTail[T]) cleaner(ctx context.Context) error {
 
-	ticker := time.NewTicker(r.config.CleanInterval)
+	ticker := r.config.Clk.Ticker(r.config.CleanInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-
 			// oldest timestamp based on now - max age
 			oldest := r.config.Clk.Now().Add(-r.config.MaxAge)
-			oldestKey := encodeKey(oldest, 0, 0)
 
 			// delete the whole range, starting from the minimal offsetkey
-			if err := r.store.DeleteRange(endOffsetRange, oldestKey, nosyncOption); err != nil {
-				return fmt.Errorf("error deleting range: %w", err)
+			if err := r.store.DeleteRange(endOffsetRange, encodeKey(oldest, 0, 0), pebble.NoSync); err != nil {
+				log.Printf("error deleting range: %v", err)
 			}
-			ticker.Reset(r.config.CleanInterval)
 		}
 	}
 }
@@ -310,7 +311,7 @@ func (r *DiskTail[T]) cleaner(ctx context.Context) error {
 type IterStats struct {
 	m sync.Mutex
 	// number of items iterated
-	itemsIterated int64
+	itemsIterated atomic.Int64
 	// number of unique keys. Note that this value will be 0 if duplicates are included when
 	// iterating.
 	uniqueKeys atomic.Int64
@@ -320,10 +321,7 @@ type IterStats struct {
 }
 
 func (is *IterStats) ItemsIterated() int64 {
-	is.m.Lock()
-	defer is.m.Unlock()
-
-	return is.itemsIterated
+	return is.itemsIterated.Load()
 }
 
 func (is *IterStats) UniqueKeys() int64 {
@@ -411,16 +409,17 @@ iterateTail:
 
 		key := it.Key()
 
+		// track oldest timestamp for stats
+		timestamp, _, partition := decodeKey(key)
+
 		// not a valid data-key (probably offset key), skip it
-		if len(key) != dataKeyLen {
+		if timestamp.UnixMicro() == 0 {
 			if it.Prev() {
 				continue
 			}
 			// we're at the beginning, stopping loop
 			break
 		}
-		// track oldest timestamp for stats
-		timestamp, _, partition := decodeKey(key)
 
 		stats.m.Lock()
 		if stats.oldestItem.IsZero() || timestamp.Before(stats.oldestItem) {
@@ -432,9 +431,7 @@ iterateTail:
 		// decode it using the codec and deduplicate using the key.
 		key, value := decodeValue(it.Value())
 
-		stats.m.Lock()
-		stats.itemsIterated++
-		stats.m.Unlock()
+		stats.itemsIterated.Add(1)
 
 		workerChan := workers.getWorker(partition, itemHandler)
 		valueCopy := make([]byte, len(value))

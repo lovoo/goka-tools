@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	offsetKeyLen = 4
-	dataKeyLen   = 20
+	// length of a key in pebble.
+	// A key includes timestamp, offset and partition of the original message
+	keyLen = 20
 
 	// Number of bytes to be used to write the length of the key.
 	// That means a key can only be 32bit long (4gb)
@@ -32,14 +33,20 @@ func decodeValue(encoded []byte) ([]byte, []byte) {
 	return encoded[valueKeylenSize : valueKeylenSize+keylen], encoded[valueKeylenSize+keylen:]
 }
 
+var offsetKeyTime = time.Unix(0, 0)
+
+func encodeOffsetKey(partition int32) []byte {
+	return encodeKey(offsetKeyTime, 0, partition)
+}
+
 // encodes the key to be used on disk absed on timestamp, offset and partition.
 // the original key will be part of the value
 func encodeKey(timestamp time.Time, offset int64, partition int32) []byte {
-	b := make([]byte, dataKeyLen)
-
+	b := make([]byte, keyLen)
 	binary.BigEndian.PutUint64(b, uint64(timestamp.UnixMicro()))
 	binary.BigEndian.PutUint64(b[8:], uint64(offset))
 	binary.BigEndian.PutUint32(b[16:], uint32(partition))
+
 	return b
 }
 
@@ -48,7 +55,7 @@ func encodeKey(timestamp time.Time, offset int64, partition int32) []byte {
 // - offset
 // - partition
 func decodeKey(key []byte) (time.Time, int64, int32) {
-	if len(key) != dataKeyLen {
+	if len(key) != keyLen {
 		panic("invalid key length. drop the disk")
 	}
 	return time.UnixMicro(int64(binary.BigEndian.Uint64(key))), // timestamp
@@ -56,9 +63,11 @@ func decodeKey(key []byte) (time.Time, int64, int32) {
 		int32(binary.BigEndian.Uint32(key[16:])) // partition
 }
 
-func offsetKeyForPartition(partition int32) []byte {
-	buf := make([]byte, offsetKeyLen)
-	binary.BigEndian.PutUint32(buf, uint32(partition))
+// func offsetKeyForPartition(partition int32) []byte {
+// 	buf := make([]byte, keyLen)
+// 	binary.BigEndian.PutUint32(buf[keyLen-4:], uint32(partition))
 
-	return buf
-}
+// 	t, of, par := decodeKey(buf)
+// 	log.Printf("encoded offset key time: %v, offset %v, part %v", t, of, par)
+// 	return buf
+// }
