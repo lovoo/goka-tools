@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/lovoo/goka"
 	"github.com/lovoo/goka-tools/gtyped"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -26,6 +27,16 @@ const (
 var nosyncOption = &pebble.WriteOptions{
 	Sync: false,
 }
+
+type Logger interface {
+	Info(format string, args ...interface{})
+}
+
+type nilLogger struct{}
+
+func (n *nilLogger) Info(format string, args ...interface{}) {}
+
+var offsetWriteRate int64 = 1000
 
 // DiskTail implements a persistent tail for a kafka topic.
 // Data is stored to disk using pebble key-value store.
@@ -65,6 +76,11 @@ type DiskTail[T any] struct {
 	consumer sarama.Consumer
 
 	messages chan *sarama.ConsumerMessage
+
+	// metrics
+	mxAdded   prometheus.Counter
+	mxTimeLag *prometheus.GaugeVec
+	mxCleaned prometheus.Counter
 }
 
 type Config struct {
@@ -74,6 +90,7 @@ type Config struct {
 	Clk             clock.Clock
 	InitialOffset   int64
 	ClientId        string // client-id used for sarama and for the goka tester
+	Log             Logger
 }
 
 func (c *Config) defaults() *Config {
@@ -108,6 +125,9 @@ func (c *Config) defaults() *Config {
 		c.ClientId = "disktail"
 	}
 
+	if c.Log == nil {
+		c.Log = new(nilLogger)
+	}
 	return c
 }
 
@@ -131,7 +151,7 @@ func NewDiskTail[T any](brokers []string, topic string, codec gtyped.GCodec[T], 
 	store, err := pebble.Open(path, &pebble.Options{
 		DisableWAL:                  true,
 		Cache:                       cache,
-		DisableAutomaticCompactions: true,
+		DisableAutomaticCompactions: false,
 		TableCache:                  pebble.NewTableCache(cache, 20, 100),
 		MemTableSize:                uint64(100 << 20), // 100mb memtable to avoid too many compactions
 		MaxConcurrentCompactions:    func() int { return 3 },
@@ -147,9 +167,36 @@ func NewDiskTail[T any](brokers []string, topic string, codec gtyped.GCodec[T], 
 		topic:    topic,
 		store:    store,
 		codec:    codec,
+
+		mxAdded: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "goka_tools",
+			Subsystem: "disktail",
+			Name:      "added_item",
+			Help:      "items added to the tail",
+		}),
+		mxTimeLag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "goka_tools",
+			Subsystem: "disktail",
+			Name:      "timestamp_lag_s",
+			Help:      "timestamp milliseconds of last added message",
+		}, []string{"partition"}),
+		mxCleaned: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "goka_tools",
+			Subsystem: "disktail",
+			Name:      "cleaned",
+			Help:      "a cleaning job was executed",
+		}),
 	}
 
 	return ring, nil
+}
+
+func (r *DiskTail[T]) Metrics() []prometheus.Collector {
+	return []prometheus.Collector{
+		r.mxAdded,
+		r.mxTimeLag,
+		r.mxCleaned,
+	}
 }
 
 func (r *DiskTail[T]) close() error {
@@ -174,11 +221,11 @@ func (r *DiskTail[T]) Run(ctx context.Context) error {
 	}
 
 	errg, ctx := errgroup.WithContext(ctx)
-	for idx, part := range parts {
+	for _, part := range parts {
 		part := part
-		idx := idx
 		errg.Go(func() error {
-			offset := storedOffsets[idx]
+			r.config.Log.Info("creating worker for partition %d", part)
+			offset := storedOffsets[part]
 			if offset == -1 {
 				offset = r.config.InitialOffset
 			} else {
@@ -186,10 +233,13 @@ func (r *DiskTail[T]) Run(ctx context.Context) error {
 				offset++
 			}
 
+			r.config.Log.Info("starting to consume partition %d from offset %d", part, offset)
+
 			partCons, err := r.consumer.ConsumePartition(r.topic, part, offset)
 
 			// if out of range, try with oldest
 			if err == sarama.ErrOffsetOutOfRange {
+				r.config.Log.Info("consumer offset is out of range, will try with 'oldest'")
 				partCons, err = r.consumer.ConsumePartition(r.topic, part, sarama.OffsetOldest)
 			}
 
@@ -246,6 +296,7 @@ func (r *DiskTail[T]) handleMessages(ctx context.Context) error {
 
 			ts := msg.Timestamp
 			if ts.IsZero() {
+				r.config.Log.Info("no timestamp is zero, will assume 'now'")
 				ts = r.config.Clk.Now()
 			}
 			key := encodeKey(ts, msg.Offset, msg.Partition)
@@ -254,8 +305,14 @@ func (r *DiskTail[T]) handleMessages(ctx context.Context) error {
 				return fmt.Errorf("error storing value for key %s (partition=%d): %w", string(msg.Key), msg.Partition, err)
 			}
 
-			if err := r.storeOffset(msg.Partition, msg.Offset); err != nil {
-				return fmt.Errorf("error storing offset %d for partition %d: %w", msg.Offset, msg.Partition, err)
+			r.mxAdded.Add(1)
+			r.mxTimeLag.WithLabelValues(strconv.Itoa(int(msg.Partition))).Set(time.Since(ts).Seconds())
+
+			// let's store offset only every 1k message, it's fine to do some catchup on the last message
+			if msg.Offset%offsetWriteRate == 0 {
+				if err := r.storeOffset(msg.Partition, msg.Offset); err != nil {
+					return fmt.Errorf("error storing offset %d for partition %d: %w", msg.Offset, msg.Partition, err)
+				}
 			}
 		case <-ctx.Done():
 			// context closed, just stop.
@@ -276,6 +333,11 @@ func (r *DiskTail[T]) getOffsets(partitions []int32) ([]int64, error) {
 
 	for idx, part := range partitions {
 		val, closer, err := r.store.Get(encodeOffsetKey(part))
+		if len(val) != 8 {
+			r.config.Log.Info("offset value has unexpected length of %d (%x)", len(val), val)
+			offsets[idx] = -1
+			continue
+		}
 		if err != nil {
 			if err == pebble.ErrNotFound {
 				offsets[idx] = -1
@@ -301,11 +363,12 @@ func (r *DiskTail[T]) cleaner(ctx context.Context) error {
 			// oldest timestamp based on now - max age
 			oldest := r.config.Clk.Now().Add(-r.config.MaxAge)
 
-			log.Printf("cleaning disk tail, removing entries older than %v", oldest)
+			r.config.Log.Info("cleaning disk tail, removing entries older than %v", oldest)
 			// delete the whole range, starting from the minimal offsetkey
 			if err := r.store.DeleteRange(endOffsetRange, encodeKey(oldest, 0, 0), pebble.NoSync); err != nil {
-				log.Printf("error deleting range: %v", err)
+				r.config.Log.Info("error deleting range: %v", err)
 			}
+			r.mxCleaned.Add(1)
 		}
 	}
 }

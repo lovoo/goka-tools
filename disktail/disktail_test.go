@@ -83,6 +83,7 @@ func TestEncodeDecodeValue(t *testing.T) {
 // Tests that the order of keys is maintained based on time even across different
 // partitions.
 func TestOrder(t *testing.T) {
+
 	now := time.Now()
 	highestPartitionKey := encodeKey(now, 0, math.MaxInt32)
 	require.EqualValues(t, -1, bytes.Compare(endOffsetRange, highestPartitionKey))
@@ -102,6 +103,13 @@ func TestDiskTail(t *testing.T) {
 	now := time.Unix(1717138410, 0)
 	clk := clock.NewMock()
 	clk.Set(now)
+
+	oldOffsetWriteRate := offsetWriteRate
+	defer func() {
+		offsetWriteRate = oldOffsetWriteRate
+	}()
+
+	offsetWriteRate = 1
 
 	createTailer := func(t *testing.T, numPartitions int32, cleanerInterval time.Duration, cleanerMaxAge time.Duration) (*mocks.Consumer, *DiskTail[string]) {
 		dir, err := os.MkdirTemp("", "disktail*")
