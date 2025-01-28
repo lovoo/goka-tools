@@ -2,6 +2,7 @@ package disktail
 
 import (
 	"encoding/binary"
+	"log"
 	"time"
 )
 
@@ -56,18 +57,10 @@ func encodeKey(timestamp time.Time, offset int64, partition int32) []byte {
 // - partition
 func decodeKey(key []byte) (time.Time, int64, int32) {
 	if len(key) != keyLen {
-		panic("invalid key length. drop the disk")
+		log.Printf("invalid key length. drop the disk: %s", string(key))
+		return time.Time{}, 0, 0
 	}
 	return time.UnixMicro(int64(binary.BigEndian.Uint64(key))), // timestamp
 		int64(binary.BigEndian.Uint64(key[8:])), // offset
 		int32(binary.BigEndian.Uint32(key[16:])) // partition
 }
-
-// func offsetKeyForPartition(partition int32) []byte {
-// 	buf := make([]byte, keyLen)
-// 	binary.BigEndian.PutUint32(buf[keyLen-4:], uint32(partition))
-
-// 	t, of, par := decodeKey(buf)
-// 	log.Printf("encoded offset key time: %v, offset %v, part %v", t, of, par)
-// 	return buf
-// }
