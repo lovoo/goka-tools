@@ -208,7 +208,12 @@ func (r *DiskTail[T]) close() error {
 
 // Run starts the disk tailer. It's only allowed to be called once per instance.
 func (r *DiskTail[T]) Run(ctx context.Context) error {
-	defer r.close()
+	defer func() {
+		err := r.close()
+		if err != nil {
+			r.config.Log.Info("error closing disktail: %v", err)
+		}
+	}()
 
 	parts, err := r.consumer.Partitions(r.topic)
 	if err != nil {
@@ -432,7 +437,8 @@ func (r *DiskTail[T]) Iterate(ctx context.Context, skipDuplicates bool, stats *I
 	if err != nil {
 		return fmt.Errorf("error creating iterator: %w", err)
 	}
-	r.store.NewBatch()
+	defer it.Close()
+
 	if !it.Last() {
 		return nil
 	}

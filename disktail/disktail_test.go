@@ -3,6 +3,7 @@ package disktail
 import (
 	"bytes"
 	"context"
+	"log"
 	"math"
 	"os"
 	"sync"
@@ -98,6 +99,12 @@ func TestOrder(t *testing.T) {
 	require.EqualValues(t, -1, bytes.Compare(data1, data2))
 }
 
+type testLogger struct{}
+
+func (t *testLogger) Info(format string, args ...interface{}) {
+	log.Printf(format, args...)
+}
+
 func TestDiskTail(t *testing.T) {
 
 	now := time.Unix(1717138410, 0)
@@ -132,6 +139,7 @@ func TestDiskTail(t *testing.T) {
 			MaxAge:        cleanerMaxAge,
 			CleanInterval: cleanerInterval,
 			InitialOffset: sarama.OffsetNewest,
+			Log:           new(testLogger),
 		})
 		require.NoError(t, err)
 
