@@ -1,0 +1,15 @@
+baseURL = 'https://example.org/'
+languageCode = 'en-us'
+title = 'Goka Documentation'
+defaultContentLanguage = 'en'
+defaultContentLanguageInSubdir = true
+
+[module]
+  [[module.imports]]
+    path = 'github.com/alex-shpak/hugo-book'
+
+[languages]
+  [languages.en]
+    languageName = 'English'
+    contentDir = 'content/en'
+    weight = 1
