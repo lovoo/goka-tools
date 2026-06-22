@@ -1,6 +1,6 @@
 module github.com/lovoo/goka-tools
 
-go 1.24.2
+go 1.26.4
 
 require (
 	cloud.google.com/go v0.120.0
